@@ -1,0 +1,5 @@
+# .env
+ENVIRONMENT=development
+MONGO_URI=mongodb+srv://<user>:<password>@<cluster>/
+REDIS_URL=redis://redis:6379/0
+API_PORT=8000
