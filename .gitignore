@@ -1,5 +1,17 @@
-# .env
-ENVIRONMENT=development
-MONGO_URI=mongodb+srv://<user>:<password>@<cluster>/
-REDIS_URL=redis://redis:6379/0
-API_PORT=8000
+# Environments
+.env
+.env.*
+.venv
+env/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# OS Files
+.DS_Store
+Thumbs.db
