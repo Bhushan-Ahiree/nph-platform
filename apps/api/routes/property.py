@@ -4,7 +4,9 @@ from shared.schemas.property import PropertyCreate, PropertyDB
 from shared.utils.database import db
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, status, Depends  # ADDED: Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Query # ADDED: Depends
+from typing import Optional
+
 
 # NEW IMPORT: Pull down the authentication guard dependency
 from shared.utils.auth_guard import get_current_user
@@ -12,14 +14,52 @@ from shared.utils.auth_guard import get_current_user
 router = APIRouter(prefix="/properties", tags=["Properties"])
 
 @router.get("/", response_model=list[PropertyDB])
-async def get_properties(skip: int = 0, limit: int = 50):
-    """PUBLIC ENDPOINT: Anyone can read listings without logging in."""
-    cursor = db.client.nph_core.properties.find().skip(skip).limit(limit)
+async def get_properties(
+    skip: int = 0,
+    limit: int = 50,
+    city: Optional[str] = Query(None, description="Filter by city (e.g., Nashik, Pune)"),
+    locality: Optional[str] = Query(None, description="Filter by specific neighborhood"),
+    bhk: Optional[int] = Query(None, description="Filter by BHK configuration (e.g., 2, 3)"),
+    min_price: Optional[float] = Query(None, description="Minimum price limit in INR"),
+    max_price: Optional[float] = Query(None, description="Maximum price limit in INR"),
+    property_type: Optional[str] = Query(None, description="Apartment, Villa, Commercial, Plot")
+):
+    """
+    PUBLIC SEARCH ENDPOINT: Dynamically filters property listings based on incoming search parameters.
+    Supports price ranges, BHK matching, and exact location lookups.
+    """
+    # 1. Initialize an empty MongoDB query dictionary
+    mongo_query = {}
+
+    # 2. Dynamically build the location criteria
+    if city:
+        mongo_query["location.city"] = {"$regex": f"^{city}$", "$options": "i"} # Case-insensitive exact match
+    if locality:
+        mongo_query["location.locality"] = {"$regex": locality, "$options": "i"} # Partial match for neighborhoods
+
+    # 3. Handle strict configuration matching
+    if bhk:
+        mongo_query["configuration.bhk"] = bhk
+    if property_type:
+        mongo_query["property_type"] = {"$regex": f"^{property_type}$", "$options": "i"}
+
+    # 4. Handle numerical range queries for pricing filters
+    if min_price is not None or max_price is not None:
+        mongo_query["price"] = {}
+        if min_price is not None:
+            mongo_query["price"]["$gte"] = min_price  # Greater than or equal to
+        if max_price is not None:
+            mongo_query["price"]["$lte"] = max_price  # Less than or equal to
+
+    # 5. Execute the query against MongoDB Atlas with pagination limits
+    cursor = db.client.nph_core.properties.find(mongo_query).skip(skip).limit(limit)
     properties = await cursor.to_list(length=limit)
+    
+    # 6. Format MongoDB ObjectIDs for smooth JSON output strings
     for prop in properties:
         prop["_id"] = str(prop["_id"])
+        
     return properties
-
 
 @router.post("/", response_model=PropertyDB, status_code=status.HTTP_201_CREATED)
 async def create_property(
