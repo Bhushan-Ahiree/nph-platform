@@ -1,10 +1,11 @@
 fastapi==0.110.0
-uvicorn[standard]==0.29.0
-motor==3.6.0
+uvicorn[standard]==0.28.0
+pymongo==4.6.2
+motor==3.3.2
 pydantic==2.6.4
 pydantic-settings==2.2.1
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 pyjwt==2.10.1
 email-validator==2.1.1
-bcrypt==4.0.1
 python-multipart==0.0.19
