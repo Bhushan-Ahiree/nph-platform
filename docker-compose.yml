@@ -17,6 +17,8 @@ services:
       - ./shared:/app/shared
     depends_on:
       - redis
+    networks:
+      - nph_network
     command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload
 
   redis:
@@ -26,6 +28,27 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - nph_network
+
+  nph_scraper:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    container_name: nph_scraper
+    volumes:
+      - ./apps/scraper:/app/apps/scraper
+      - ./shared:/app/shared
+    working_dir: /app/apps/scraper
+    command: sh -c "pip install -r requirements.txt && python run.py"
+    depends_on:
+      - api  # FIXED: Pointing to the structural service key name
+    networks:
+      - nph_network
 
 volumes:
   redis_data:
+
+networks:
+  nph_network:
+    driver: bridge
