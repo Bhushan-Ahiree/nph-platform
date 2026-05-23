@@ -17,7 +17,8 @@ celery_app.conf.update(
     timezone="Asia/Kolkata",
     enable_utc=True,
     task_acks_late=True,
-    worker_prefetch_multiplier=1
+    worker_prefetch_multiplier=1,
+    broker_connection_retry_on_startup=True
 )
 
 # FIXED: Explicitly register task modules via direct string imports

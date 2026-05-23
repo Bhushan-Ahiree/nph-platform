@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from shared.utils.database import connect_to_mongo, close_mongo_connection, db
 import logging
-
+from apps.api.routers.system import router as system_router
 from apps.api.routes.property import router as property_router
 # NEW IMPORT: Pull the auth router directly
 from apps.api.routes.auth import router as auth_router
@@ -29,11 +29,13 @@ app = FastAPI(
     version="1.0.0",
     description="Core infrastructure for the NPH ecosystem",
     lifespan=lifespan
+    
 )
 
 # Wire the systems up to the application
 app.include_router(auth_router)       # Authentication router registered
 app.include_router(property_router)   # Property router registered
+app.include_router(system_router)
 
 @app.get("/")
 async def root():
