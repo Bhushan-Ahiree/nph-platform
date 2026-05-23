@@ -11,7 +11,6 @@ services:
     env_file:
       - .env
     volumes:
-      # Mount local code for live-reloading during development
       - ./apps/api:/app/apps/api
       - ./services:/app/services
       - ./shared:/app/shared
@@ -31,6 +30,24 @@ services:
     networks:
       - nph_network
 
+  nph_worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    container_name: nph_worker
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./apps/worker:/app/apps/worker
+      - ./shared:/app/shared
+    working_dir: /app/apps/worker
+    # Command: Install runtime worker requirements and fire up the Celery execution daemon
+    command: sh -c "pip install -r requirements.txt && celery -A main.celery_app worker --loglevel=info"
+    depends_on:
+      - redis
+    networks:
+      - nph_network
+
   nph_scraper:
     build:
       context: .
@@ -42,7 +59,7 @@ services:
     working_dir: /app/apps/scraper
     command: sh -c "pip install -r requirements.txt && python run.py"
     depends_on:
-      - api  # FIXED: Pointing to the structural service key name
+      - api
     networks:
       - nph_network
 
