@@ -9,7 +9,6 @@ from apps.api.routes.auth import router as auth_router
 import uuid
 from fastapi.middleware.cors import CORSMiddleware
 
-
 logger = logging.getLogger("uvicorn.error")
 
 @asynccontextmanager
@@ -31,13 +30,21 @@ app = FastAPI(
     version="1.0.0",
     description="Core infrastructure for the NPH ecosystem",
     lifespan=lifespan
-    
 )
 
-# Wire the systems up to the application
-app.include_router(auth_router)       # Authentication router registered
-app.include_router(property_router)   # Property router registered
-app.include_router(system_router)
+@app.middleware("http")
+async def add_correlation_id_middleware(request: Request, call_next):
+    """Intercepts incoming transactions and mounts a distinct tracking handle to the context."""
+    correlation_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    request.state.correlation_id = correlation_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = correlation_id
+    return response
+
+# Wire the routers up to the application EXACTLY ONCE
+app.include_router(auth_router)       
+app.include_router(property_router)   
+app.include_router(system_router)     # FIXED: Only included here, duplicate removed from bottom
 
 @app.get("/")
 async def root():
@@ -46,23 +53,3 @@ async def root():
         "service": "NPH API Core",
         "database_connected": db.client is not None
     }
-    
-    
-@app.middleware("http")
-async def add_correlation_id_middleware(request: Request, call_next):
-    """Intercepts incoming transactions and mounts a distinct tracking handle to the context."""
-    # Check if an upstream service passed a correlation handle down the wire
-    correlation_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-    
-    # Store it in the request state so internal sub-routers can fetch it easily
-    request.state.correlation_id = correlation_id
-    
-    # Execute the underlying application endpoint
-    response = await call_next(request)
-    
-    # Mirror the ID back in the final response headers for outer client audit loops
-    response.headers["X-Request-ID"] = correlation_id
-    return response
-
-# Mount your routers as usual
-app.include_router(system_router)

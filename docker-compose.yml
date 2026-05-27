@@ -37,6 +37,8 @@ services:
     container_name: nph_worker
     environment:
       - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
     volumes:
       - ./apps/worker:/app/apps/worker
       - ./shared:/app/shared
