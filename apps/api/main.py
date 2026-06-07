@@ -8,6 +8,7 @@ from apps.api.routes.property import router as property_router
 from apps.api.routes.auth import router as auth_router
 import uuid
 from fastapi.middleware.cors import CORSMiddleware
+from apps.api.routers.lead import router as lead_router
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -45,6 +46,7 @@ async def add_correlation_id_middleware(request: Request, call_next):
 app.include_router(auth_router)       
 app.include_router(property_router)   
 app.include_router(system_router)     # FIXED: Only included here, duplicate removed from bottom
+app.include_router(lead_router)
 
 @app.get("/")
 async def root():

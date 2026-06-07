@@ -1,20 +1,28 @@
 # apps/worker/main.py
-from celery import Celery
 import os
+from celery import Celery
 
-# Ensure REDIS_URL falls back to container networks cleanly
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
-
+# Initialize the Celery Distributed Core pointing to our Redis container service instance
 celery_app = Celery(
     "nph_worker_core",
-    broker=REDIS_URL,
-    backend=REDIS_URL,
-    # FIXED: Explicitly tell Celery to import and register your analytics module on boot
-    include=["tasks.analytics_tasks"]
+    broker=os.getenv("REDIS_URL", "redis://redis:6379/0"),
+    backend=os.getenv("REDIS_URL", "redis://redis:6379/0")
 )
 
-# Optional configuration settings to optimize task execution
+# Operational System Optimization Rules
 celery_app.conf.update(
-    task_track_started=True,
-    result_expires=3600,
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="Asia/Kolkata",
+    enable_utc=True,
+    task_acks_late=True,
+    worker_prefetch_multiplier=1,
+    broker_connection_retry_on_startup=True
+)
+
+# FIXED: Explicitly register task modules via direct string imports
+celery_app.conf.imports = (
+    "tasks.ingestion_tasks",
+    "tasks.analytics_tasks",
 )
