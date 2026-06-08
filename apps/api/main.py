@@ -1,57 +1,46 @@
 # apps/api/main.py
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from shared.utils.database import connect_to_mongo, close_mongo_connection, db
-import logging
-from apps.api.routers.system import router as system_router
-from apps.api.routes.property import router as property_router
 from apps.api.routes.auth import router as auth_router
-import uuid
-from fastapi.middleware.cors import CORSMiddleware
+from apps.api.routes.property import router as property_router
+from apps.api.routers.system import router as system_router
 from apps.api.routers.lead import router as lead_router
+from apps.api.routers.conversation import router as conversation_router
 
-logger = logging.getLogger("uvicorn.error")
+# Import the repositories to handle initialization centrally
+from apps.api.repositories.lead_repository import LeadRepository
+from apps.api.repositories.conversation_repository import ConversationRepository
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await connect_to_mongo()
+    """Handles startup and shutdown events cleanly under a modern single lifecycle workflow."""
+    print("[Lifespan Startup] Ensuring all MongoDB Atlas cluster collection indexes exist...")
     try:
-        if db.client is not None:
-            await db.client.admin.command('ping')
-            logger.info("Pinged MongoDB deployment. Connection verified!")
+        # Trigger your repository indexing engines explicitly on container boot
+        await LeadRepository().create_indexes()
+        await ConversationRepository().create_indexes()
+        print("[Lifespan Startup] Index verification complete. Database optimization rules active.")
     except Exception as e:
-        logger.error(f"Failed to ping MongoDB: {e}")
+        print(f"[Lifespan Error] Critical failure during background database setup: {str(e)}")
         
-    yield 
+    yield  # The application serves incoming HTTP traffic here
     
-    await close_mongo_connection()
+    print("[Lifespan Shutdown] Cleaning runtime application layer states...")
 
+# Pass the modern lifespan handler directly into your core FastAPI instance
 app = FastAPI(
     title="NPH Property Intelligence Core",
     version="1.0.0",
-    description="Core infrastructure for the NPH ecosystem",
     lifespan=lifespan
 )
 
-@app.middleware("http")
-async def add_correlation_id_middleware(request: Request, call_next):
-    """Intercepts incoming transactions and mounts a distinct tracking handle to the context."""
-    correlation_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-    request.state.correlation_id = correlation_id
-    response = await call_next(request)
-    response.headers["X-Request-ID"] = correlation_id
-    return response
-
-# Wire the routers up to the application EXACTLY ONCE
-app.include_router(auth_router)       
-app.include_router(property_router)   
-app.include_router(system_router)     # FIXED: Only included here, duplicate removed from bottom
+# Route registration mounts
+app.include_router(auth_router)
+app.include_router(property_router)
+app.include_router(system_router)
 app.include_router(lead_router)
+app.include_router(conversation_router)
 
 @app.get("/")
 async def root():
-    return {
-        "status": "online",
-        "service": "NPH API Core",
-        "database_connected": db.client is not None
-    }
+    return {"message": "NPH Operating System Backend Platform Running"}

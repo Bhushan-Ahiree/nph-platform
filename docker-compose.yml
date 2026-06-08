@@ -1,5 +1,4 @@
 # docker-compose.yml
-
 services:
   api:
     build:
@@ -10,10 +9,9 @@ services:
       - "${API_PORT:-8000}:8000"
     env_file:
       - .env
+    working_dir: /app
     volumes:
-      - ./apps/api:/app/apps/api
-      - ./services:/app/services
-      - ./shared:/app/shared
+      - .:/app 
     depends_on:
       - redis
     networks:
