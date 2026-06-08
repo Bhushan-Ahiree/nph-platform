@@ -6,10 +6,10 @@ from apps.api.routes.property import router as property_router
 from apps.api.routers.system import router as system_router
 from apps.api.routers.lead import router as lead_router
 from apps.api.routers.conversation import router as conversation_router
-
-# Import the repositories to handle initialization centrally
+from apps.api.routes.match import router as match_router
 from apps.api.repositories.lead_repository import LeadRepository
 from apps.api.repositories.conversation_repository import ConversationRepository
+from apps.api.repositories.match_repository import MatchRepository
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -19,6 +19,8 @@ async def lifespan(app: FastAPI):
         # Trigger your repository indexing engines explicitly on container boot
         await LeadRepository().create_indexes()
         await ConversationRepository().create_indexes()
+        await MatchRepository().create_indexes()
+        
         print("[Lifespan Startup] Index verification complete. Database optimization rules active.")
     except Exception as e:
         print(f"[Lifespan Error] Critical failure during background database setup: {str(e)}")
@@ -40,6 +42,7 @@ app.include_router(property_router)
 app.include_router(system_router)
 app.include_router(lead_router)
 app.include_router(conversation_router)
+app.include_router(match_router)
 
 @app.get("/")
 async def root():
