@@ -10,6 +10,7 @@ from apps.api.routes.match import router as match_router
 from apps.api.repositories.lead_repository import LeadRepository
 from apps.api.repositories.conversation_repository import ConversationRepository
 from apps.api.repositories.match_repository import MatchRepository
+from apps.api.routes.analytics import router as analytics_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -43,6 +44,7 @@ app.include_router(system_router)
 app.include_router(lead_router)
 app.include_router(conversation_router)
 app.include_router(match_router)
+app.include_router(analytics_router)
 
 @app.get("/")
 async def root():
