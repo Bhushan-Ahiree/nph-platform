@@ -7,10 +7,12 @@ from apps.api.routers.system import router as system_router
 from apps.api.routers.lead import router as lead_router
 from apps.api.routers.conversation import router as conversation_router
 from apps.api.routes.match import router as match_router
+from apps.api.routes.webhooks import router as webhook_router
 from apps.api.repositories.lead_repository import LeadRepository
 from apps.api.repositories.conversation_repository import ConversationRepository
 from apps.api.repositories.match_repository import MatchRepository
 from apps.api.routes.analytics import router as analytics_router
+from apps.api.repositories.webhook_event_repository import WebhookEventRepository
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -21,6 +23,7 @@ async def lifespan(app: FastAPI):
         await LeadRepository().create_indexes()
         await ConversationRepository().create_indexes()
         await MatchRepository().create_indexes()
+        await WebhookEventRepository().create_indexes()
         
         print("[Lifespan Startup] Index verification complete. Database optimization rules active.")
     except Exception as e:
@@ -45,6 +48,7 @@ app.include_router(lead_router)
 app.include_router(conversation_router)
 app.include_router(match_router)
 app.include_router(analytics_router)
+app.include_router(webhook_router)
 
 @app.get("/")
 async def root():
