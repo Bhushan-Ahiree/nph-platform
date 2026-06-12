@@ -25,4 +25,5 @@ celery_app.conf.update(
 celery_app.conf.imports = (
     "tasks.ingestion_tasks",
     "tasks.analytics_tasks",
+    "tasks.webhook_tasks",
 )

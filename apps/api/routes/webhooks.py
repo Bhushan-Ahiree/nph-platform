@@ -34,7 +34,7 @@ async def process_async_meta_payload(payload: WebhookEventCreate):
         event_record = await repo.insert_raw_event(payload)
         
         # 2. Asynchronously push to your background execution stack
-        # process_incoming_message_event.delay(event_record["event_id"])
+        process_incoming_message_event.delay(event_record["event_id"])
         
         # 3. Return 202 Accepted to clear the webhook connection pool instantly
         return {"status": "accepted", "event_id": event_record["event_id"]}

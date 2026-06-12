@@ -33,13 +33,17 @@ services:
       context: .
       dockerfile: infrastructure/docker/api.Dockerfile
     container_name: nph_worker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app
     env_file:
       - .env
     volumes:
       - ./apps/worker:/app/apps/worker
       - ./shared:/app/shared
+      - ./services:/app/services
     working_dir: /app/apps/worker
     # Command: Install runtime worker requirements and fire up the Celery execution daemon
     command: sh -c "pip install -r requirements.txt && celery -A main.celery_app worker --loglevel=info"
@@ -53,6 +57,8 @@ services:
       context: .
       dockerfile: infrastructure/docker/api.Dockerfile
     container_name: nph_scraper
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./apps/scraper:/app/apps/scraper
       - ./shared:/app/shared
