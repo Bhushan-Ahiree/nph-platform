@@ -5,6 +5,8 @@ services:
       context: .
       dockerfile: infrastructure/docker/api.Dockerfile
     container_name: nph_api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${API_PORT:-8000}:8000"
     env_file:

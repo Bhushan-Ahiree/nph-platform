@@ -13,10 +13,17 @@ from apps.api.repositories.conversation_repository import ConversationRepository
 from apps.api.repositories.match_repository import MatchRepository
 from apps.api.routes.analytics import router as analytics_router
 from apps.api.repositories.webhook_event_repository import WebhookEventRepository
+from apps.api.routers import inventory
+from shared.utils.database import close_mongo_connection, connect_to_mongo
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handles startup and shutdown events cleanly under a modern single lifecycle workflow."""
+    print("[Lifespan Startup] Booting up MongoDB connections...")
+    
+    # 1. ACTUALLY CONNECT TO MONGODB FIRST
+    await connect_to_mongo()
+    
     print("[Lifespan Startup] Ensuring all MongoDB Atlas cluster collection indexes exist...")
     try:
         # Trigger your repository indexing engines explicitly on container boot
@@ -32,6 +39,9 @@ async def lifespan(app: FastAPI):
     yield  # The application serves incoming HTTP traffic here
     
     print("[Lifespan Shutdown] Cleaning runtime application layer states...")
+    
+    # 2. CLOSE THE CONNECTION ON SHUTDOWN
+    await close_mongo_connection()
 
 # Pass the modern lifespan handler directly into your core FastAPI instance
 app = FastAPI(
@@ -49,6 +59,7 @@ app.include_router(conversation_router)
 app.include_router(match_router)
 app.include_router(analytics_router)
 app.include_router(webhook_router)
+app.include_router(inventory.router)
 
 @app.get("/")
 async def root():
