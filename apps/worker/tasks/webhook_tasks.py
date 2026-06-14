@@ -7,7 +7,7 @@ from celery import shared_task
 from pymongo import MongoClient
 
 # MongoDB Setup
-mongo_url = os.getenv("MONGO_URL", "mongodb://localhost:27017")
+mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
 client = MongoClient(mongo_url)
 db = client["nph_core"]
 
@@ -34,19 +34,26 @@ def get_or_create_lead(phone_number: str) -> dict:
     return lead
 
 def extract_facts_with_ai(lead_profile: dict, new_message: str) -> dict:
-    """Uses Llama 3.2 to extract only NEW facts and generate a conversational reply."""
+    """Uses Llama 3.2 to extract NEW facts, with strict normalization for Marathi/Hindi/Hinglish."""
     
-    prompt = f"""You are a Real Estate Assistant in Nashik.
+    prompt = f"""You are an expert Real Estate Assistant in Nashik.
 Current Knowledge about Lead: {json.dumps(lead_profile['requirements'])}
 Lead's New Message: "{new_message}"
 
-Task 1: Extract any NEW facts from the message (bhk, area, budget_max, tenant_type). 
-Task 2: If we are missing 'bhk', 'area', or 'budget_max', write a short, friendly reply asking for ONE missing detail. If we have all three, reply with "MATCH_READY".
+CRITICAL INSTRUCTIONS:
+1. TRANSLATE: The message may be in Marathi, Hindi, or Hinglish (e.g., "pahije", "sathi", "parayant", "madhe"). Translate it internally to English before extracting.
+2. NORMALIZE NUMBERS: Convert abbreviations like "18k" to integer 18000. Convert '50k' to 50000.
+3. EXTRACT NEW FACTS ONLY: 
+   - 'bhk' (integer only, e.g., 2)
+   - 'area' (string, remove suffixes like 'la' or 'madhe', e.g., "College Road")
+   - 'budget_max' (integer only, e.g., 18000)
+   - 'tenant_type' (string: "family", "bachelor", or "any")
+4. CONVERSATION LOGIC: If we are STILL missing 'bhk', 'area', or 'budget_max' after combining current knowledge and new facts, write a short, friendly reply asking for ONE missing detail. If we have all three, reply strictly with "MATCH_READY".
 
-Respond ONLY in valid JSON format:
+Respond ONLY in valid JSON format matching this exact structure:
 {{
-    "new_facts": {{ "bhk": 2, "area": "Indira Nagar" }}, // Only include fields they just mentioned
-    "reply_text": "Got it! And what is your maximum budget?"
+    "new_facts": {{ "bhk": 2, "area": "College Road", "budget_max": 18000, "tenant_type": "family" }},
+    "reply_text": "MATCH_READY"
 }}"""
 
     try:
@@ -61,22 +68,31 @@ Respond ONLY in valid JSON format:
     except Exception as e:
         print(f"[AI Error] {str(e)}")
         return '{"new_facts": {}, "reply_text": "I am having trouble connecting to my brain right now."}'
-
+    
 @shared_task(name="tasks.webhook_tasks.process_incoming_message_event")
-def process_incoming_message_event(payload: dict):
-    sender = payload.get("sender")
-    text = payload.get("payload", {}).get("text", "")
-    msg_id = payload.get("id", "msg_local_test")
+def process_incoming_message_event(event_id: str):
+    # 0. Fetch the payload using the event_id from the API
+    event = db["webhook_events"].find_one({"event_id": event_id})
+    if not event:
+        return f"Error: Event '{event_id}' not found in database."
+
+    # Extract data from the fetched event
+    sender = event.get("sender")
+    text = event.get("payload", {}).get("text", "")
+    msg_id = event.get("event_id", "msg_local_test")
 
     print(f"\n[Incoming Message] {sender}: {text}")
 
-    # 1. Save Raw Conversation
-    db["conversations"].insert_one({
-        "sender": sender, "text": text, "timestamp": datetime.now(timezone.utc)
-    })
-
-    # 2. Fetch Stateful Lead Profile
+    # 1. Fetch Stateful Lead Profile FIRST
     lead = get_or_create_lead(sender)
+
+    # 2. Save Raw Conversation WITH the correct lead_id
+    db["conversations"].insert_one({
+        "lead_id": lead["lead_id"],
+        "sender": sender, 
+        "text": text, 
+        "timestamp": datetime.now(timezone.utc)
+    })
     
     # 3. AI Fact Extraction (Incremental Enrichment)
     ai_response_str = extract_facts_with_ai(lead, text)

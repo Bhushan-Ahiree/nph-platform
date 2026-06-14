@@ -14,7 +14,7 @@ class ConversationRepository:
 
     async def create_indexes(self):
         """Builds composite tracking indexes for immediate conversational history retrieval."""
-        await self.collection.create_index("lead_id", unique=True)
+        await self.collection.create_index("lead_id")
         await self.collection.create_index("phone")
 
     async def append_message_to_history(self, lead_id: str, phone: str, message: ConversationAppend) -> dict:
