@@ -15,6 +15,7 @@ from apps.api.routes.analytics import router as analytics_router
 from apps.api.repositories.webhook_event_repository import WebhookEventRepository
 from apps.api.routers import inventory
 from shared.utils.database import close_mongo_connection, connect_to_mongo
+from apps.api.routers import search
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -60,6 +61,7 @@ app.include_router(match_router)
 app.include_router(analytics_router)
 app.include_router(webhook_router)
 app.include_router(inventory.router)
+app.include_router(search.router)
 
 @app.get("/")
 async def root():
