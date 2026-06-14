@@ -1,129 +1,147 @@
 # apps/worker/tasks/webhook_tasks.py
 import os
+import json
 import httpx
-from celery import Celery
-from pymongo import MongoClient
 from datetime import datetime, timezone
-import uuid
-import sys
+from celery import shared_task
+from pymongo import MongoClient
 
-sys.path.insert(0, "/app")
+# MongoDB Setup
+mongo_url = os.getenv("MONGO_URL", "mongodb://localhost:27017")
+client = MongoClient(mongo_url)
+db = client["nph_core"]
 
-# Import our AI parser and the Commission Shield mask
-from services.ai.extraction import extract_lead_parameters
-from services.matching.engine import mask_property_for_client
+LLAMA_URL = "http://host.docker.internal:11434/api/generate"
 
-redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
-celery_app = Celery("nph_tasks", broker=redis_url, backend=redis_url)
-
-@celery_app.task(name="tasks.webhook_tasks.process_incoming_message_event")
-def process_incoming_message_event(event_id: str):
-    """The core pipeline: Event -> AI Extraction -> Lead Update -> API Search -> WhatsApp Reply."""
-    
-    mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
-    client = MongoClient(mongo_url)
-    db = client["nph_core"]
-    
-    # 1. Fetch the raw payload
-    event = db["webhook_events"].find_one({"event_id": event_id})
-    if not event:
-        return f"Failure: Event '{event_id}' not found."
-
-    db["webhook_events"].update_one({"event_id": event_id}, {"$set": {"processing_status": "processing"}})
-
-    try:
-        sender_phone = event.get("sender")
-        raw_text = event.get("payload", {}).get("text", "")
-
-        if not raw_text:
-            raise ValueError("No text payload found to process.")
-
-        # 2. Execute Local AI Extraction
-        print(f"[Worker] Sending text to Llama 3.2 for sender {sender_phone}...")
-        extracted_data = extract_lead_parameters(raw_text)
-        
-        if not extracted_data:
-            raise ValueError("AI failed to extract meaningful JSON.")
-
-        # 3. Upsert Lead Profile using Phone Number as unique anchor
-        lead = db["leads"].find_one({"phone": sender_phone})
-        lead_id = lead["lead_id"] if lead else f"lead_{uuid.uuid4().hex[:8]}"
-
-        lead_payload = {
-            "lead_id": lead_id,
-            "phone": sender_phone,
-            "requirement_type": extracted_data.get("requirement_type", "rent"),
-            "configuration": {"bhk": extracted_data.get("bhk", 0)},
-            "preferred_areas": extracted_data.get("preferred_areas", []),
-            "budget_min": 0,
-            "budget_max": extracted_data.get("budget_max", 0),
-            "parking": extracted_data.get("parking", False),
-            "source": event.get("platform", "whatsapp"),
+def get_or_create_lead(phone_number: str) -> dict:
+    """Fetches existing lead or creates a new one in the DISCOVERY state."""
+    lead = db["leads"].find_one({"identities.value": phone_number})
+    if not lead:
+        lead = {
+            "lead_id": f"lead_{phone_number[-6:]}",
+            "status": "DISCOVERY",
+            "identities": [{"type": "phone", "value": phone_number}],
+            "requirements": {
+                "bhk": None,
+                "area": None,
+                "budget_max": None,
+                "tenant_type": None
+            },
+            "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc)
         }
+        db["leads"].insert_one(lead)
+    return lead
 
-        # Update or create the lead record
-        db["leads"].update_one(
-            {"phone": sender_phone},
-            {"$set": lead_payload, "$setOnInsert": {"created_at": datetime.now(timezone.utc), "hotness_score": 0}},
-            upsert=True
-        )
+def extract_facts_with_ai(lead_profile: dict, new_message: str) -> dict:
+    """Uses Llama 3.2 to extract only NEW facts and generate a conversational reply."""
+    
+    prompt = f"""You are a Real Estate Assistant in Nashik.
+Current Knowledge about Lead: {json.dumps(lead_profile['requirements'])}
+Lead's New Message: "{new_message}"
 
-        # 4. Trigger the Search API internally!
-        print(f"[Worker] Lead {lead_id} mapped. Searching inventory for matches...")
-        api_url = os.getenv("INTERNAL_API_URL", "http://api:8000")
+Task 1: Extract any NEW facts from the message (bhk, area, budget_max, tenant_type). 
+Task 2: If we are missing 'bhk', 'area', or 'budget_max', write a short, friendly reply asking for ONE missing detail. If we have all three, reply with "MATCH_READY".
+
+Respond ONLY in valid JSON format:
+{{
+    "new_facts": {{ "bhk": 2, "area": "Indira Nagar" }}, // Only include fields they just mentioned
+    "reply_text": "Got it! And what is your maximum budget?"
+}}"""
+
+    try:
+        response = httpx.post(LLAMA_URL, json={
+            "model": "llama3.2",
+            "prompt": prompt,
+            "stream": False,
+            "format": "json"
+        }, timeout=60.0)
         
-        search_params = {"limit": 3}
-        if extracted_data.get("bhk"):
-            search_params["bhk"] = extracted_data["bhk"]
-        if extracted_data.get("budget_max"):
-            search_params["max_price"] = extracted_data["budget_max"]
-        if extracted_data.get("preferred_areas"):
-            search_params["area"] = extracted_data["preferred_areas"][0]
-            
-        with httpx.Client(timeout=10.0) as http_client:
-            response = http_client.get(f"{api_url}/properties/search", params=search_params)
-            matches = response.json().get("data", []) if response.status_code == 200 else []
-
-        # 5. Format the Outbound WhatsApp Message using the Commission Shield
-        if not matches:
-            reply_text = (
-                "We have received your requirements! Our local team is currently scanning "
-                "our offline network and will get back to you shortly with options."
-            )
-        else:
-            reply_text = f"Great news! We found {len(matches)} verified properties matching your criteria right now:\n\n"
-            
-            for idx, match in enumerate(matches, 1):
-                safe_data = mask_property_for_client(match)
-                reply_text += (
-                    f"*{idx}. {safe_data.get('bhk')}BHK in {safe_data.get('general_area')}*\n"
-                    f"Rent: ₹{safe_data.get('price')} | Deposit: ₹{safe_data.get('deposit')}\n"
-                    f"Furnishing: {str(safe_data.get('furnishing')).title()}\n"
-                    f"Tenant Preference: {str(safe_data.get('tenant_preference')).title()}\n\n"
-                )
-                
-            reply_text += "Reply with the number of the property you'd like to visit, and our team will coordinate the site visit!"
-
-        # Print the final output for terminal debugging
-        print("\n=== OUTBOUND WHATSAPP PAYLOAD ===")
-        print(f"To: {sender_phone}")
-        print(reply_text)
-        print("=================================\n")
-        
-        # TODO: Inject your actual WhatsApp Meta API call here!
-        # send_whatsapp_message(sender_phone, reply_text)
-
-        # 6. Close out the event successfully
-        db["webhook_events"].update_one(
-            {"event_id": event_id},
-            {"$set": {"processing_status": "completed", "processed_at": datetime.now(timezone.utc)}}
-        )
-        return f"Success: AI Processed & Matched Lead {lead_id}."
-        
+        return response.json().get("response", "{}")
     except Exception as e:
-        db["webhook_events"].update_one(
-            {"event_id": event_id},
-            {"$set": {"processing_status": "failed", "error_log": str(e)}}
-        )
-        return f"Error on '{event_id}': {str(e)}"
+        print(f"[AI Error] {str(e)}")
+        return '{"new_facts": {}, "reply_text": "I am having trouble connecting to my brain right now."}'
+
+@shared_task(name="tasks.webhook_tasks.process_incoming_message_event")
+def process_incoming_message_event(payload: dict):
+    sender = payload.get("sender")
+    text = payload.get("payload", {}).get("text", "")
+    msg_id = payload.get("id", "msg_local_test")
+
+    print(f"\n[Incoming Message] {sender}: {text}")
+
+    # 1. Save Raw Conversation
+    db["conversations"].insert_one({
+        "sender": sender, "text": text, "timestamp": datetime.now(timezone.utc)
+    })
+
+    # 2. Fetch Stateful Lead Profile
+    lead = get_or_create_lead(sender)
+    
+    # 3. AI Fact Extraction (Incremental Enrichment)
+    ai_response_str = extract_facts_with_ai(lead, text)
+    try:
+        ai_data = json.loads(ai_response_str)
+    except:
+        ai_data = {"new_facts": {}, "reply_text": "Could you clarify that?"}
+
+    new_facts = ai_data.get("new_facts", {})
+    reply_text = ai_data.get("reply_text", "")
+
+    # 4. Save Facts for Traceability & Update Lead Profile
+    if new_facts:
+        for fact_key, fact_val in new_facts.items():
+            if fact_val:
+                # Save to Fact Store
+                db["extracted_facts"].insert_one({
+                    "lead_id": lead["lead_id"],
+                    "fact_type": fact_key,
+                    "value": fact_val,
+                    "source_message_id": msg_id,
+                    "created_at": datetime.now(timezone.utc)
+                })
+                # Update Lead Document
+                lead["requirements"][fact_key] = fact_val
+        
+        # Save updated lead back to DB
+        lead["updated_at"] = datetime.now(timezone.utc)
+        db["leads"].update_one({"_id": lead["_id"]}, {"$set": {"requirements": lead["requirements"], "updated_at": lead["updated_at"]}})
+
+    # 5. STATE MACHINE EVALUATION
+    reqs = lead["requirements"]
+    is_matchable = bool(reqs.get("bhk") and reqs.get("area") and reqs.get("budget_max"))
+
+    if not is_matchable:
+        # State: PARTIAL_REQUIREMENTS
+        db["leads"].update_one({"_id": lead["_id"]}, {"$set": {"status": "PARTIAL_REQUIREMENTS"}})
+        print(f"=== OUTBOUND TO {sender} ===")
+        print(reply_text)
+        return "State: Partial. Asked for missing info."
+
+    else:
+        # State: MATCHABLE -> Trigger Engine
+        db["leads"].update_one({"_id": lead["_id"]}, {"$set": {"status": "MATCHABLE"}})
+        print(f"[State Machine] Lead {lead['lead_id']} is MATCHABLE. Triggering Engine...")
+        
+        # Call the existing search endpoint
+        try:
+            search_url = f"http://api:8000/properties/search?limit=3&bhk={reqs['bhk']}&max_price={reqs['budget_max']}&area={reqs['area']}"
+            api_resp = httpx.get(search_url, timeout=10.0)
+            matches = api_resp.json().get("data", [])
+            
+            print(f"=== OUTBOUND TO {sender} ===")
+            if matches:
+                print(f"Great news! I found {len(matches)} properties matching your 100% complete profile:\n")
+                for idx, m in enumerate(matches, 1):
+                    # Commission Shield
+                    print(f"*{idx}. {m.get('bhk')}BHK in {m.get('area')}*")
+                    print(f"Rent: ₹{m.get('price')} | Deposit: ₹{m.get('rental_details', {}).get('deposit')}\n")
+                print("Reply with the number to book a site visit!")
+            else:
+                print("I have all your requirements, but currently no active properties match. I'll notify you when one arrives.")
+                
+            return "State: Matchable. Properties Sent."
+            
+        except Exception as e:
+            print(f"Matching Engine Failed: {str(e)}")
+            return "Error during matching"

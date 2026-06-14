@@ -48,7 +48,7 @@ services:
       - ./services:/app/services
     working_dir: /app/apps/worker
     # Command: Install runtime worker requirements and fire up the Celery execution daemon
-    command: sh -c "pip install -r requirements.txt && celery -A main.celery_app worker --loglevel=info"
+    command: sh -c "pip install -r requirements.txt && celery -A main.celery_app worker -B --loglevel=info"
     depends_on:
       - redis
     networks:

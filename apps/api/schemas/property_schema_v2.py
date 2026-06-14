@@ -28,7 +28,7 @@ class PropertySchemaV2(BaseModel):
     title: str
     description: Optional[str] = None
     property_type: Literal["apartment", "villa", "plot", "commercial"] = "apartment"
-    listing_type: Literal["rent", "buy"] = "rent"
+    listing_type: Literal["rent", "buy", "sale"] = "rent"
     
     # Geographic Data
     city: Literal["Nashik", "Pune", "Mumbai"] = "Nashik"
