@@ -40,3 +40,10 @@ class SiteVisitResponse(SiteVisitBase):
     feedback_notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    
+class SiteVisitUpdate(BaseModel):
+    status: Optional[VisitStatus] = None
+    outcome: Optional[PostVisitOutcome] = None
+    scheduled_at: Optional[datetime] = None
+    visit_fee_collected: Optional[bool] = None
+    feedback_notes: Optional[str] = None
