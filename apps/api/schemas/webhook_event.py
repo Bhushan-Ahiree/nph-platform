@@ -1,7 +1,7 @@
 # apps/api/schemas/webhook_event.py
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 class WebhookEventCreate(BaseModel):
     platform: str = Field(..., pattern="^(whatsapp|instagram)$")
@@ -25,4 +25,4 @@ class LeadActivityLog(BaseModel):
     lead_id: str
     activity_type: str = Field(..., description="e.g., message_received, match_sent, site_visit_booked")
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

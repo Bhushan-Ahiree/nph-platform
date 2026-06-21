@@ -1,49 +1,37 @@
+# apps/api/schemas/site_visit_schemas.py
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 from enum import Enum
 
+
 class VisitStatus(str, Enum):
-    REQUESTED = "requested"      # Lead clicked the number, waiting for Mom to confirm time
-    SCHEDULED = "scheduled"      # Time locked in
-    COMPLETED = "completed"      # Mom showed the flat
-    NO_SHOW = "no_show"          # Lead ghosted (Reduces Lead Score)
-    CANCELED = "canceled"        # Mutually canceled
+    SCHEDULED = "SCHEDULED"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+    NOSHOW = "NOSHOW"
 
-class PostVisitOutcome(str, Enum):
-    PENDING = "pending"          # Visit hasn't happened yet
-    INTERESTED = "interested"    # Moving to negotiation
-    NOT_INTERESTED = "not_interested" # Lead rejected it
-    DEAL_CLOSED = "deal_closed"  # Revenue event!
 
-class SiteVisitBase(BaseModel):
+class SiteVisitCreate(BaseModel):
     lead_id: str
     property_id: str
-    scheduled_at: Optional[datetime] = None
-    assigned_to: str = "mom" # Hardcoded for now, can expand if you hire staff
-    
-    # Financials
-    visit_fee_collected: bool = False
-    visit_fee_amount: int = 100
-    
-    # Denormalized Analytics Data (Stamped at creation)
-    broker_name: Optional[str] = None
-    area: str 
+    scheduled_at: datetime
+    notes: Optional[str] = None
 
-class SiteVisitCreate(SiteVisitBase):
-    pass
 
-class SiteVisitResponse(SiteVisitBase):
-    id: str = Field(alias="_id")
-    status: VisitStatus = VisitStatus.REQUESTED
-    outcome: PostVisitOutcome = PostVisitOutcome.PENDING
-    feedback_notes: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-    
 class SiteVisitUpdate(BaseModel):
     status: Optional[VisitStatus] = None
-    outcome: Optional[PostVisitOutcome] = None
+    notes: Optional[str] = None
     scheduled_at: Optional[datetime] = None
-    visit_fee_collected: Optional[bool] = None
-    feedback_notes: Optional[str] = None
+
+
+class SiteVisitResponse(BaseModel):
+    id: str = Field(alias="id")
+    lead_id: str
+    property_id: str
+    scheduled_at: datetime
+    status: VisitStatus = VisitStatus.SCHEDULED
+    notes: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"populate_by_name": True}

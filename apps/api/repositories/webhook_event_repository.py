@@ -1,17 +1,27 @@
 # apps/api/repositories/webhook_event_repository.py
-from motor.motor_asyncio import AsyncIOMotorClient
 from apps.api.schemas.webhook_event import WebhookEventCreate
-from datetime import datetime
-import os
+from datetime import datetime, timezone
 import uuid
 
+
 class WebhookEventRepository:
-    def __init__(self):
-        self.mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
-        self.client = AsyncIOMotorClient(self.mongo_url)
-        self.db = self.client["nph_core"]
-        self.collection = self.db["webhook_events"]
-        self.activity_collection = self.db["lead_activity"]
+    """Manages raw webhook event persistence and activity logging."""
+
+    @property
+    def collection(self):
+        """Dynamically fetches the webhook events collection via shared database singleton."""
+        from shared.utils.database import db
+        if db.client is None:
+            raise RuntimeError("Database client is not initialized yet.")
+        return db.client.nph_core.webhook_events
+
+    @property
+    def activity_collection(self):
+        """Dynamically fetches the lead activity collection via shared database singleton."""
+        from shared.utils.database import db
+        if db.client is None:
+            raise RuntimeError("Database client is not initialized yet.")
+        return db.client.nph_core.lead_activity
 
     async def create_indexes(self):
         """Generates indexes for background task processing tracking logs."""
@@ -21,11 +31,11 @@ class WebhookEventRepository:
 
     async def insert_raw_event(self, event_in: WebhookEventCreate) -> dict:
         """Atomically saves the raw incoming payload to ensure no data is lost."""
-        payload = event_in.dict()
+        payload = event_in.model_dump()
         payload["event_id"] = f"evt_{uuid.uuid4().hex[:8]}"
         payload["processing_status"] = "pending"
-        payload["received_at"] = datetime.utcnow()
-        
+        payload["received_at"] = datetime.now(timezone.utc)
+
         await self.collection.insert_one(payload)
         payload.pop("_id", None)
         return payload
@@ -33,7 +43,7 @@ class WebhookEventRepository:
     async def update_status(self, event_id: str, status: str) -> bool:
         result = await self.collection.update_one(
             {"event_id": event_id},
-            {"$set": {"processing_status": status, "processed_at": datetime.utcnow()}}
+            {"$set": {"processing_status": status, "processed_at": datetime.now(timezone.utc)}}
         )
         return result.modified_count > 0
 
@@ -44,7 +54,7 @@ class WebhookEventRepository:
             "lead_id": lead_id,
             "activity_type": activity_type,
             "metadata": metadata or {},
-            "created_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc)
         }
         await self.activity_collection.insert_one(activity)
         return True

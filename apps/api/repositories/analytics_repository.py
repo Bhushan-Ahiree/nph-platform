@@ -1,15 +1,25 @@
 # apps/api/repositories/analytics_repository.py
-from motor.motor_asyncio import AsyncIOMotorClient
-from datetime import datetime
-import os
+from datetime import datetime, timezone
+
 
 class AnalyticsRepository:
-    def __init__(self):
-        self.mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
-        self.client = AsyncIOMotorClient(self.mongo_url)
-        self.db = self.client["nph_core"]
-        self.leads_col = self.db["leads"]
-        self.matches_col = self.db["matches"]
+    """Computes and persists CRM operational analytics and scoring metrics."""
+
+    @property
+    def leads_col(self):
+        """Dynamically fetches the leads collection via shared database singleton."""
+        from shared.utils.database import db
+        if db.client is None:
+            raise RuntimeError("Database client is not initialized yet.")
+        return db.client.nph_core.leads
+
+    @property
+    def matches_col(self):
+        """Dynamically fetches the matches collection via shared database singleton."""
+        from shared.utils.database import db
+        if db.client is None:
+            raise RuntimeError("Database client is not initialized yet.")
+        return db.client.nph_core.matches
 
     async def calculate_and_update_hotness(self, lead_id: str) -> int:
         """Computes the core operational business priority rating for a target user profile."""
@@ -49,11 +59,11 @@ class AnalyticsRepository:
         hot = await self.leads_col.count_documents({"hotness_score": {"$gte": 70}})
         warm = await self.leads_col.count_documents({"hotness_score": {"$gte": 40, "$lt": 70}})
         cold = await self.leads_col.count_documents({"hotness_score": {"$lt": 40}})
-        
+
         visits_booked = await self.leads_col.count_documents({"site_visit_booked": True})
         visits_paid = await self.leads_col.count_documents({"site_visit_paid": True})
         closed_deals = await self.leads_col.count_documents({"deal_closed": True})
-        
+
         # Calculate dynamic monetary indicators
         cursor = self.leads_col.find({"deal_closed": True}, {"deal_value": 1})
         deals = await cursor.to_list(length=1000)

@@ -1,5 +1,5 @@
 # apps/api/schemas/property_schema_v2.py
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 
@@ -11,7 +11,7 @@ class PropertySource(BaseModel):
 
 class PropertyAvailability(BaseModel):
     status: Literal["active", "rented", "sold", "inactive"] = "active"
-    last_verified_at: datetime = Field(default_factory=datetime.utcnow)
+    last_verified_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     verified_by: Literal["mom", "bhushan", "automated"] = "automated"
 
 class PropertyRentalDetails(BaseModel):
@@ -27,7 +27,7 @@ class PropertyIntelligence(BaseModel):
 class PropertySchemaV2(BaseModel):
     title: str
     description: Optional[str] = None
-    property_type: Literal["apartment", "villa", "plot", "commercial"] = "apartment"
+    property_type: Literal["apartment", "villa", "plot", "commercial", "flat", "land"] = "apartment"
     listing_type: Literal["rent", "buy", "sale"] = "rent"
     
     # Geographic Data
@@ -47,5 +47,11 @@ class PropertySchemaV2(BaseModel):
     intelligence: PropertyIntelligence = Field(default_factory=PropertyIntelligence)
     
     raw_message: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    status: Literal["ACTIVE", "UNVERIFIED", "ARCHIVED"] = "ACTIVE"
+    availability_status: Literal["verified", "stale", "unverified", "archived"] = "verified"
+    last_verified_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    verification_count: int = 1
+    confidence_score: int = 100
+    broker_phone: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

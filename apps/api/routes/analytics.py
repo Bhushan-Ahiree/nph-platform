@@ -4,7 +4,7 @@ from apps.api.schemas.analytics_schemas import PipelineSummaryResponse
 from apps.api.schemas.lead_schemas import LeadResponse
 from apps.api.repositories.analytics_repository import AnalyticsRepository
 from apps.api.repositories.lead_repository import LeadRepository
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/analytics", tags=["CRM Operational Insights"])
 analytics_repo = AnalyticsRepository()
@@ -25,7 +25,7 @@ async def log_followup_attempt(lead_id: str):
         {
             "$set": {
                 "follow_up_count": current_count,
-                "last_contacted_at": datetime.utcnow()
+                "last_contacted_at": datetime.now(timezone.utc)
             }
         }
     )

@@ -1,7 +1,7 @@
 # apps/worker/tasks/analytics_tasks.py
 import time
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from main import celery_app
 from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
@@ -23,7 +23,7 @@ async def save_materialized_snapshot(locality: str, compiled_metrics: dict):
         "average_price_sqft": compiled_metrics["average_price_sqft"],
         "total_active_listings": compiled_metrics["total_active_listings"],
         "market_velocity": compiled_metrics["market_velocity"],
-        "last_updated": datetime.utcnow()
+        "last_updated": datetime.now(timezone.utc)
     }
     
     # Enforce idempotent atomic rules: update if matches locality, insert if new
@@ -61,8 +61,7 @@ def calculate_locality_trends(self, locality: str):
         }
         
         # Orchestrate the async write transaction safely inside Celery's pool boundary
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(save_materialized_snapshot(locality, compiled_metrics))
+        asyncio.run(save_materialized_snapshot(locality, compiled_metrics))
         
         print(f"[Analytics Worker] [{task_id}] Snapshot materialized and cached successfully to Atlas for: {locality}")
         return {"locality": locality, "status": "materialized"}

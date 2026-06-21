@@ -1,19 +1,24 @@
 # apps/api/schemas/match_schemas.py
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Literal
 from datetime import datetime
 
-class MatchResponse(BaseModel):
-    match_id: str
-    lead_id: str
-    property_id: str
-    score: int = Field(..., ge=0, le=100)
-    reasons: List[str]
-    sent: bool = False
-    viewed: bool = False
-    shortlisted: bool = False
-    site_visit_requested: bool = False
-    created_at: datetime
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+class MatchCreate(BaseModel):
+    lead_id: str
+    property_ids: List[str]
+    status: Literal["SENT", "VIEWED", "ARCHIVED"] = "SENT"
+
+
+class MatchUpdate(BaseModel):
+    status: Literal["SENT", "VIEWED", "ARCHIVED"]
+
+
+class MatchResponse(BaseModel):
+    id: str = Field(alias="match_id")
+    lead_id: str
+    property_ids: List[str]
+    status: str
+    generated_at: datetime
+
+    model_config = {"populate_by_name": True}

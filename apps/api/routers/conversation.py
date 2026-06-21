@@ -18,7 +18,7 @@ async def append_chat_message(lead_id: str, payload: ConversationAppend):
     try:
         return await conv_repo.append_message_to_history(
             lead_id=lead_id,
-            phone=lead["phone"],
+            phone=lead["id"],
             message=payload
         )
     except Exception as e:

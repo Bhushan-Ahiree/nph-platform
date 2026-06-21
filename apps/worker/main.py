@@ -27,6 +27,10 @@ celery_app.conf.update(
             'task': 'tasks.maintenance_tasks.sweep_stale_properties',
             'schedule': crontab(hour=2, minute=0), # 1-MINUTE TEST MODE
         },
+        'sweep-inventory-freshness-loop': {
+            'task': 'tasks.maintenance_tasks.sweep_inventory_freshness',
+            'schedule': crontab(minute='*/5'),
+        },
     }
 )
 

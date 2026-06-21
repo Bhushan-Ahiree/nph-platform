@@ -1,16 +1,19 @@
 # apps/api/repositories/conversation_repository.py
-from motor.motor_asyncio import AsyncIOMotorClient
 from apps.api.schemas.conversation_schemas import ConversationAppend, MessageBlock
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
-import os
+
 
 class ConversationRepository:
-    def __init__(self):
-        self.mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
-        self.client = AsyncIOMotorClient(self.mongo_url)
-        self.db = self.client["nph_core"]
-        self.collection = self.db["conversations"]
+    """Manages conversation thread persistence for lead interaction memory."""
+
+    @property
+    def collection(self):
+        """Dynamically fetches the active collection pool via shared database singleton."""
+        from shared.utils.database import db
+        if db.client is None:
+            raise RuntimeError("Database client is not initialized yet.")
+        return db.client.nph_core.conversations
 
     async def create_indexes(self):
         """Builds composite tracking indexes for immediate conversational history retrieval."""
@@ -22,10 +25,10 @@ class ConversationRepository:
         new_message = MessageBlock(
             role=message.role,
             content=message.content,
-            timestamp=datetime.utcnow()
-        ).dict()
+            timestamp=datetime.now(timezone.utc)
+        ).model_dump()
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Atomic upsert engine pass
         await self.collection.update_one(

@@ -1,15 +1,22 @@
 # apps/api/routes/match.py
 from fastapi import APIRouter, HTTPException, status
-from apps.api.schemas.match_schemas import MatchResponse
+from apps.api.schemas.match_schemas import MatchResponse, MatchUpdate
 from apps.api.repositories.match_repository import MatchRepository
 from apps.api.repositories.lead_repository import LeadRepository
-from motor.motor_asyncio import AsyncIOMotorClient
+from shared.utils.database import db
 from typing import List
-import os
 
 router = APIRouter(prefix="/matches", tags=["CRM Property Matching Engine"])
+import re
+from services.matching.engine import (
+    calculate_base_structural_match_score,
+    calculate_dynamic_property_confidence,
+    get_broker_reliability_score
+)
+
 match_repo = MatchRepository()
 lead_repo = LeadRepository()
+
 
 @router.post("/trigger/{lead_id}", response_model=List[MatchResponse])
 async def run_matching_engine_for_lead(lead_id: str):
@@ -18,59 +25,75 @@ async def run_matching_engine_for_lead(lead_id: str):
     if not lead:
         raise HTTPException(status_code=404, detail=f"Lead profiles matching '{lead_id}' do not exist.")
 
-    # Grab the direct mongo client link to query properties instantly
-    mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
-    client = AsyncIOMotorClient(mongo_url)
-    properties_col = client["nph_core"]["properties"]
+    if db.client is None:
+        raise HTTPException(status_code=500, detail="Database client is not initialized.")
+    properties_col = db.client["nph_core"]["properties"]
 
-    # Pull active supply matching the core request transaction profile (e.g. rent vs buy)
-    cursor = properties_col.find({"listing_type": lead["requirement_type"], "status": "active"})
+    reqs = lead.get("requirements", {})
+    # Baseline constraints check: 'area', 'bhk', 'listing_type'
+    query_filter = {
+        "status": "ACTIVE",
+        "listing_type": reqs.get("listing_type", "rent")
+    }
+    if reqs.get("area"):
+        query_filter["area"] = {"$regex": f"^{re.escape(reqs['area'])}$", "$options": "i"}
+    if reqs.get("bhk"):
+        query_filter["bhk"] = reqs["bhk"]
+
+    cursor = properties_col.find(query_filter)
     properties = await cursor.to_list(length=200)
 
-    computed_matches = []
+    # Get historical matches
+    historical_matches = await match_repo.get_matches_by_lead(lead_id)
+    sent_property_ids = set()
+    for hm in historical_matches:
+        sent_property_ids.update(hm.get("property_ids", []))
+
+    candidate_scores = []
 
     for prop in properties:
-        score = 0
-        reasons = []
+        prop_id = prop.get("property_id")
+        if not prop_id or prop_id in sent_property_ids:
+            continue
 
-        # 1. Area Match Analysis (Weight: 40 Points)
-        # Check if the property area matches any preferred areas from the lead
-        prop_area = prop.get("location", {}).get("area", "")
-        if prop_area in lead.get("preferred_areas", []):
-            score += 40
-            reasons.append("area_match")
+        # Calculate structural match score
+        structural_score = calculate_base_structural_match_score(prop, reqs)
+        
+        # Calculate dynamic property confidence score
+        prop_confidence = calculate_dynamic_property_confidence(prop)
+        
+        # Calculate broker reliability score
+        broker_phone = prop.get("broker_phone")
+        broker_reliability = await get_broker_reliability_score(broker_phone)
 
-        # 2. Budget Bounds Analysis (Weight: 30 Points)
-        prop_price = prop.get("price", 0)
-        if lead["budget_min"] <= prop_price <= lead["budget_max"]:
-            score += 30
-            reasons.append("budget_match")
+        # Composite score
+        composite_score = structural_score + prop_confidence + broker_reliability
+        candidate_scores.append((prop_id, composite_score))
 
-        # 3. Structural BHK Analysis (Weight: 20 Points)
-        prop_bhk = prop.get("configuration", {}).get("bhk", 0)
-        lead_bhk = lead.get("configuration", {}).get("bhk", 0)
-        if prop_bhk == lead_bhk:
-            score += 20
-            reasons.append("bhk_match")
+    # Sort descending by composite score
+    candidate_scores.sort(key=lambda x: x[1], reverse=True)
+    top_property_ids = [pid for pid, score in candidate_scores[:3]]
 
-        # 4. Amenities Parking Pass (Weight: 10 Points)
-        if prop.get("parking") == lead.get("parking"):
-            score += 10
-            reasons.append("parking_match")
+    if top_property_ids:
+        await match_repo.insert_match(
+            lead_id=lead_id,
+            property_ids=top_property_ids,
+            status="SENT"
+        )
 
-        # Ingestion Guard: Only log viable options above our 50-point threshold
-        if score >= 50:
-            saved = await match_repo.save_match(
-                lead_id=lead_id,
-                property_id=prop.get("property_id", str(prop.get("_id"))),
-                score=score,
-                reasons=reasons
-            )
-            computed_matches.append(saved)
+    return await match_repo.get_matches_by_lead(lead_id)
 
-    return await match_repo.get_matches_for_lead(lead_id)
 
 @router.get("/{lead_id}", response_model=List[MatchResponse])
-async def get_calculated_lead_matches(lead_id: str, min_score: int = 50):
+async def get_calculated_lead_matches(lead_id: str):
     """Retrieves cached recommendation entries calculated during matching passes."""
-    return await match_repo.get_matches_for_lead(lead_id, min_score=min_score)
+    return await match_repo.get_matches_by_lead(lead_id)
+
+
+@router.patch("/{match_id}", response_model=MatchResponse)
+async def update_match_status_endpoint(match_id: str, payload: MatchUpdate):
+    """Updates the status of a recommendation block (e.g. SENT -> VIEWED)."""
+    updated = await match_repo.update_match_status(match_id, payload.status)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Recommendation block not found.")
+    return updated

@@ -39,7 +39,7 @@ async def search_inventory(
         query_filter["rental_details.preferred_tenant"] = {"$regex": preferred_tenant, "$options": "i"}
         
     # Always ensure we only return active listings
-    query_filter["availability.status"] = "active"
+    query_filter["status"] = "ACTIVE"
 
     try:
         # Hit the database using the repository method we already built!

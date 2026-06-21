@@ -62,24 +62,19 @@ def main():
         normalized_payload = {
             "title": item["title"],
             "description": f"Automatically ingested listing from {config['source_name']}.",
-            "property_type": "Apartment",
-            "listing_type": "Sale",  
-            "location": {
-                "city": config["target_city"],
-                "locality": item["locality"]
-            },
-            "configuration": {
-                "bhk": normalizer.normalize_bhk(item["bhk_str"]),
-                "area_sqft": built_up_area
-            },
-            "carpet_area_sqft": built_up_area * 0.8,  
-            "price": normalizer.normalize_price(item["price_str"]),
-            # FIXED: Wrapped into a nested sub-document dictionary object matching our schema rules
-            "contact": {
-                "name": "NPH Ingestion Bot",        # FIXED: Satisfies schema validation requirement
-                "type": "Agent",
-                "phone": "+919999999999",
-                "email": "info@urbanpropertyhub.com"
+            "property_type": "apartment",
+            "listing_type": "sale",
+            "city": config["target_city"],
+            "area": item["locality"],
+            "bhk": int(normalizer.normalize_bhk(item["bhk_str"])),
+            "carpet_area_sqft": int(built_up_area * 0.8),
+            "price": int(normalizer.normalize_price(item["price_str"])),
+            "parking": False,
+            "source": {
+                "type": "scraping",
+                "group_name": config["source_name"],
+                "broker_name": "NPH Ingestion Bot",
+                "broker_phone": "+919999999999"
             }
         }
         

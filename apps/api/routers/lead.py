@@ -7,10 +7,6 @@ from typing import List
 router = APIRouter(prefix="/leads", tags=["CRM Lead Management"])
 repo = LeadRepository()
 
-@router.on_event("startup")
-async def ensure_repository_indexes():
-    await repo.create_indexes()
-
 @router.post("", response_model=LeadResponse, status_code=status.HTTP_201_CREATED)
 async def create_new_lead(payload: LeadCreate):
     """Parses customer demand criteria, validates input logic, and stores inside Atlas."""

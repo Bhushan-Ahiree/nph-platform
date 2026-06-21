@@ -1,5 +1,15 @@
 # apps/api/main.py
+import logging
+
+# Suppress annoying health check logs from Docker container checks
+class HealthCheckFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "GET / " not in record.getMessage()
+
+logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from apps.api.routes.auth import router as auth_router
 from apps.api.routes.property import router as property_router
@@ -16,7 +26,7 @@ from apps.api.repositories.webhook_event_repository import WebhookEventRepositor
 from apps.api.routers import inventory
 from shared.utils.database import close_mongo_connection, connect_to_mongo
 from apps.api.routers import search
-from apps.api.routers.site_visits import router as site_visits_router
+from apps.api.routes.site_visit import router as site_visits_router
 from apps.api.repositories.site_visit_repository import site_visit_repo
 
 
@@ -24,10 +34,10 @@ from apps.api.repositories.site_visit_repository import site_visit_repo
 async def lifespan(app: FastAPI):
     """Handles startup and shutdown events cleanly under a modern single lifecycle workflow."""
     print("[Lifespan Startup] Booting up MongoDB connections...")
-    
+
     # 1. ACTUALLY CONNECT TO MONGODB FIRST
     await connect_to_mongo()
-    
+
     print("[Lifespan Startup] Ensuring all MongoDB Atlas cluster collection indexes exist...")
     try:
         # Trigger your repository indexing engines explicitly on container boot
@@ -35,15 +45,18 @@ async def lifespan(app: FastAPI):
         await ConversationRepository().create_indexes()
         await MatchRepository().create_indexes()
         await WebhookEventRepository().create_indexes()
-        
+        await site_visit_repo.create_indexes()
+        from apps.api.repositories.broker_repository import broker_repo
+        await broker_repo.create_indexes()
+
         print("[Lifespan Startup] Index verification complete. Database optimization rules active.")
     except Exception as e:
         print(f"[Lifespan Error] Critical failure during background database setup: {str(e)}")
-        
+
     yield  # The application serves incoming HTTP traffic here
-    
+
     print("[Lifespan Shutdown] Cleaning runtime application layer states...")
-    
+
     # 2. CLOSE THE CONNECTION ON SHUTDOWN
     await close_mongo_connection()
 
@@ -52,6 +65,15 @@ app = FastAPI(
     title="NPH Property Intelligence Core",
     version="1.0.0",
     lifespan=lifespan
+)
+
+# CORS Middleware for ngrok tunnel and browser dashboard access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Route registration mounts
