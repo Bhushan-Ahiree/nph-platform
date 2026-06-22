@@ -1,54 +1,117 @@
 # apps/api/routers/search.py
-from fastapi import APIRouter, HTTPException, Query
-from typing import Optional, Dict, Any
-from apps.api.repositories.property_repository import property_repo
+from fastapi import APIRouter, Depends, Query, HTTPException, status
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
+import re
+from core.database import get_db_client
+from core.security import get_current_user_role
+from services.property.commission_shield import shield_property
+from apps.api.schemas.property_schema_v2 import PropertyPublicResponse, PropertyInternalResponse
+from typing import List, Dict, Any, Optional, Union
 
-router = APIRouter(prefix="/properties", tags=["Inventory Search Engine"])
+router = APIRouter(prefix="/properties", tags=["Search Operations"])
 
-@router.get("/search")
-async def search_inventory(
-    bhk: Optional[int] = Query(None, description="Number of bedrooms"),
-    area: Optional[str] = Query(None, description="Locality or area name"),
-    max_price: Optional[int] = Query(None, description="Maximum budget (rent/price)"),
-    furnishing: Optional[str] = Query(None, description="furnished, semi-furnished, or unfurnished"),
-    preferred_tenant: Optional[str] = Query(None, description="family, bachelors, or any"),
-    limit: int = Query(20, ge=1, le=50)
-):
+@router.get("/search", response_model=List[Union[PropertyInternalResponse, PropertyPublicResponse]])
+async def search_properties(
+    area: str = Query(..., description="Target locality sector"),
+    bhk: int = Query(..., description="BHK count limit"),
+    listing_type: str = Query(..., description="'rent' or 'sale'"),
+    max_price: Optional[int] = Query(None, description="Upper nominal budget ceiling"),
+    role: str = Depends(get_current_user_role),
+    db: Any = Depends(get_db_client)
+) -> Union[List[PropertyInternalResponse], List[PropertyPublicResponse]]:
     """
-    Dynamically queries the MongoDB inventory based on strict parameters.
+    Executes a high-performance search pipeline combining baseline filtering constraints 
+    with zero-clamped confidence scores and dynamic broker reliability indices.
     """
-    query_filter: Dict[str, Any] = {}
-
-    # 1. Exact Match Filters
-    if bhk is not None:
-        query_filter["bhk"] = bhk
+    properties_collection = db["properties"]
     
-    # 2. Case-Insensitive Text Filters (Handles variations like "indira nagar" vs "Indira Nagar")
-    if area:
-        query_filter["area"] = {"$regex": area, "$options": "i"}
+    # Stage 1: Build the primary matching filters
+    match_filter: Dict[str, Any] = {
+        "status": "ACTIVE",
+        "availability_status": "VERIFIED",
+        "bhk": bhk,
+        "listing_type": listing_type,
+        "area": {"$regex": re.escape(area), "$options": "i"}
+    }
+    if max_price is not None:
+        match_filter["price"] = {"$lte": max_price}
         
-    # 3. Numeric Range Filters
-    if max_price:
-        query_filter["price"] = {"$lte": max_price}
+    # Stage 2: Execute native PyMongo Aggregation Pipeline
+    pipeline = [
+        {"$match": match_filter},
+        {
+            "$lookup": {
+                "from": "broker_profiles",
+                "localField": "broker_phone",
+                "foreignField": "_id",
+                "as": "broker_info"
+            }
+        },
+        {
+            "$addFields": {
+                "broker_profile": {"$arrayElemAt": ["$broker_info", 0]}
+            }
+        },
+        {
+            "$addFields": {
+                "broker_reliability": {"$ifNull": ["$broker_profile.reliability_score", 100]},
+                "now": datetime.now(timezone.utc)
+            }
+        },
+        {
+            "$addFields": {
+                "days_since": {
+                    "$divide": [
+                        {"$subtract": ["$now", {"$ifNull": ["$last_verified_at", "$now"]}]},
+                        1000 * 60 * 60 * 24
+                    ]
+                }
+            }
+        },
+        {
+            "$addFields": {
+                "aging_penalty": {"$multiply": [{"$floor": "$days_since"}, 5]}
+            }
+        },
+        {
+            "$addFields": {
+                "computed_confidence": {"$subtract": ["$confidence_score", "$aging_penalty"]}
+            }
+        },
+        {
+            "$addFields": {
+                "clamped_confidence": {"$cond": {"if": {"$gt": ["$computed_confidence", 0]}, "then": "$computed_confidence", "else": 0}},
+                "structural_score": 100
+            }
+        },
+        {
+            "$addFields": {
+                "composite_score": {"$add": ["$structural_score", "$clamped_confidence", "$broker_reliability"]}
+            }
+        },
+        {"$sort": {"composite_score": -1}},
+        {"$limit": 5}
+    ]
+    
+    cursor = properties_collection.aggregate(pipeline)
+    results = await cursor.to_list(length=5)
+    
+    shielded_results = []
+    for item in results:
+        # Dynamic calculation of matching justifications
+        reasons = ["Structural Parameter Match"]
+        if item.get("clamped_confidence", 100) >= 80:
+            reasons.append("Freshly Verified Asset")
+        if item.get("broker_reliability", 100) >= 90:
+            reasons.append("Highly Trusted Source")
+        item["match_reason"] = reasons
         
-    # 4. Nested Object Filters (Looking inside the V2 Schema)
-    if furnishing:
-        query_filter["rental_details.furnishing"] = {"$regex": furnishing, "$options": "i"}
+        # Serialize through role-based access controller
+        shielded = shield_property(item, role=role)
+        if role == "PUBLIC":
+            shielded_results.append(PropertyPublicResponse.model_validate(shielded))
+        else:
+            shielded_results.append(PropertyInternalResponse.model_validate(shielded))
         
-    if preferred_tenant:
-        query_filter["rental_details.preferred_tenant"] = {"$regex": preferred_tenant, "$options": "i"}
-        
-    # Always ensure we only return active listings
-    query_filter["status"] = "ACTIVE"
-
-    try:
-        # Hit the database using the repository method we already built!
-        results = await property_repo.find_filtered(query_filter=query_filter, limit=limit)
-        
-        return {
-            "status": "success",
-            "count": len(results),
-            "data": results
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Search Engine Error: {str(e)}")
+    return shielded_results

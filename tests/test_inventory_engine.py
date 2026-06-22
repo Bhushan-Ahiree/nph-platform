@@ -58,7 +58,9 @@ async def test_freshness_sweeper_asymmetric_rent(mock_db):
     stale_res = await col.find_one({"title": "Stale Rent Apartment"})
     fresh_res = await col.find_one({"title": "Fresh Rent Apartment"})
 
-    assert stale_res["status"] == "UNVERIFIED"
+    assert stale_res["availability_status"] == "UNVERIFIED"
+    assert stale_res["status"] == "ACTIVE"
+    assert fresh_res["availability_status"] == "VERIFIED"
     assert fresh_res["status"] == "ACTIVE"
 
 
@@ -104,7 +106,9 @@ async def test_freshness_sweeper_asymmetric_sale_flat_commercial(mock_db):
     stale_flat_res = await col.find_one({"title": "Stale Sale Flat"})
     fresh_comm_res = await col.find_one({"title": "Fresh Sale Commercial"})
 
-    assert stale_flat_res["status"] == "UNVERIFIED"
+    assert stale_flat_res["availability_status"] == "UNVERIFIED"
+    assert stale_flat_res["status"] == "ACTIVE"
+    assert fresh_comm_res["availability_status"] == "VERIFIED"
     assert fresh_comm_res["status"] == "ACTIVE"
 
 
@@ -150,7 +154,9 @@ async def test_freshness_sweeper_asymmetric_sale_plot_land(mock_db):
     stale_land_res = await col.find_one({"title": "Stale Sale Land"})
     fresh_plot_res = await col.find_one({"title": "Fresh Sale Plot"})
 
-    assert stale_land_res["status"] == "UNVERIFIED"
+    assert stale_land_res["availability_status"] == "ARCHIVED"
+    assert stale_land_res["status"] == "ARCHIVED"
+    assert fresh_plot_res["availability_status"] == "UNVERIFIED"
     assert fresh_plot_res["status"] == "ACTIVE"
 
 
@@ -160,61 +166,75 @@ async def test_search_and_matching_blocks_non_active(api_client, mock_db):
     Search endpoint and match triggers block UNVERIFIED or ARCHIVED listings.
     """
     from apps.api.repositories.property_repository import property_repo
-    col = property_repo.get_collection()
-    col._docs = []
-    
-    # 1. ACTIVE property
-    prop_active = {
-        "property_id": "prop_act1",
-        "title": "Active Apartment",
-        "price": 10000,
-        "bhk": 2,
-        "area": "Indira Nagar",
-        "listing_type": "rent",
-        "property_type": "apartment",
-        "status": "ACTIVE",
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc)
-    }
-    # 2. UNVERIFIED property
-    prop_unverified = {
-        "property_id": "prop_unv1",
-        "title": "Unverified Apartment",
-        "price": 10000,
-        "bhk": 2,
-        "area": "Indira Nagar",
-        "listing_type": "rent",
-        "property_type": "apartment",
-        "status": "UNVERIFIED",
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc)
-    }
-    # 3. ARCHIVED property
-    prop_archived = {
-        "property_id": "prop_arc1",
-        "title": "Archived Apartment",
-        "price": 10000,
-        "bhk": 2,
-        "area": "Indira Nagar",
-        "listing_type": "rent",
-        "property_type": "apartment",
-        "status": "ARCHIVED",
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc)
-    }
-    
-    await col.insert_one(prop_active)
-    await col.insert_one(prop_unverified)
-    await col.insert_one(prop_archived)
+    from shared.utils.auth_guard import get_current_user
 
-    # Call /properties/search
-    search_response = api_client.get("/properties/search", params={"area": "Indira Nagar", "bhk": 2})
-    assert search_response.status_code == 200
-    search_data = search_response.json()["data"]
-    
-    # Should only return the ACTIVE property
-    assert len(search_data) == 1
-    assert search_data[0]["property_id"] == "prop_act1"
+    api_client.app.dependency_overrides[get_current_user] = lambda: {
+        "id": "test_user_id_123",
+        "email": "test@nph.com",
+        "role": "admin"
+    }
+
+    try:
+        col = property_repo.get_collection()
+        col._docs = []
+        
+        # 1. ACTIVE property
+        prop_active = {
+            "property_id": "prop_act1",
+            "title": "Active Apartment",
+            "price": 10000,
+            "bhk": 2,
+            "area": "Indira Nagar",
+            "listing_type": "rent",
+            "property_type": "apartment",
+            "status": "ACTIVE",
+            "availability_status": "VERIFIED",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc)
+        }
+        # 2. UNVERIFIED property
+        prop_unverified = {
+            "property_id": "prop_unv1",
+            "title": "Unverified Apartment",
+            "price": 10000,
+            "bhk": 2,
+            "area": "Indira Nagar",
+            "listing_type": "rent",
+            "property_type": "apartment",
+            "status": "UNVERIFIED",
+            "availability_status": "VERIFIED",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc)
+        }
+        # 3. ARCHIVED property
+        prop_archived = {
+            "property_id": "prop_arc1",
+            "title": "Archived Apartment",
+            "price": 10000,
+            "bhk": 2,
+            "area": "Indira Nagar",
+            "listing_type": "rent",
+            "property_type": "apartment",
+            "status": "ARCHIVED",
+            "availability_status": "VERIFIED",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc)
+        }
+        
+        await col.insert_one(prop_active)
+        await col.insert_one(prop_unverified)
+        await col.insert_one(prop_archived)
+
+        # Call /properties/search
+        search_response = api_client.get("/properties/search", params={"area": "Indira Nagar", "bhk": 2, "listing_type": "rent"})
+        assert search_response.status_code == 200
+        search_data = search_response.json()
+        
+        # Should only return the ACTIVE property
+        assert len(search_data) == 1
+        assert search_data[0]["property_id"] == "prop_act1"
+    finally:
+        api_client.app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -258,7 +278,7 @@ async def test_verify_and_archive_endpoints(api_client, mock_db):
         assert response_verify.status_code == 200
         data_verify = response_verify.json()
         assert data_verify["status"] == "ACTIVE"
-        assert datetime.fromisoformat(data_verify["updated_at"].replace("Z", "+00:00")) > datetime.now(timezone.utc) - timedelta(days=5)
+        assert datetime.fromisoformat(data_verify["last_verified_at"].replace("Z", "+00:00")) > datetime.now(timezone.utc) - timedelta(days=5)
 
         # Archive the property
         response_archive = api_client.patch("/properties/prop_target123/archive", headers=headers)

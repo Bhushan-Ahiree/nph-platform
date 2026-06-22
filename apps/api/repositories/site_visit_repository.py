@@ -30,6 +30,11 @@ class SiteVisitRepository:
             "scheduled_at": scheduled_at,
             "status": "SCHEDULED",
             "notes": notes,
+            "visit_fee": 100,
+            "fee_collected": False,
+            "collected_by": None,
+            "visit_result": None,
+            "deal_closed": False,
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc)
         }
@@ -55,13 +60,34 @@ class SiteVisitRepository:
             v["id"] = str(v.pop("_id"))
         return visits
 
-    async def update_site_visit_status(self, visit_id: str, status: Optional[str] = None, notes: Optional[str] = None) -> Optional[dict]:
-        """Modifies the status or appends notes after a visit finishes."""
+    async def update_site_visit_status(
+        self,
+        visit_id: str,
+        status: Optional[str] = None,
+        notes: Optional[str] = None,
+        visit_fee: Optional[int] = None,
+        fee_collected: Optional[bool] = None,
+        collected_by: Optional[str] = None,
+        visit_result: Optional[str] = None,
+        deal_closed: Optional[bool] = None,
+        session = None
+    ) -> Optional[dict]:
+        """Modifies the status or appends notes/financial details after a visit finishes."""
         update_fields = {}
         if status is not None:
             update_fields["status"] = status
         if notes is not None:
             update_fields["notes"] = notes
+        if visit_fee is not None:
+            update_fields["visit_fee"] = visit_fee
+        if fee_collected is not None:
+            update_fields["fee_collected"] = fee_collected
+        if collected_by is not None:
+            update_fields["collected_by"] = collected_by
+        if visit_result is not None:
+            update_fields["visit_result"] = visit_result
+        if deal_closed is not None:
+            update_fields["deal_closed"] = deal_closed
 
         if not update_fields:
             query = {}
@@ -69,7 +95,7 @@ class SiteVisitRepository:
                 query = {"_id": ObjectId(visit_id)}
             except Exception:
                 query = {"_id": visit_id}
-            doc = await self.collection.find_one(query)
+            doc = await self.collection.find_one(query, session=session)
             if doc:
                 doc["id"] = str(doc.pop("_id"))
                 return doc
@@ -86,7 +112,8 @@ class SiteVisitRepository:
         updated_doc = await self.collection.find_one_and_update(
             query,
             {"$set": update_fields},
-            return_document=ReturnDocument.AFTER
+            return_document=ReturnDocument.AFTER,
+            session=session
         )
         if updated_doc:
             updated_doc["id"] = str(updated_doc.pop("_id"))

@@ -1,10 +1,14 @@
-# apps/api/routes/match.py
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from apps.api.schemas.match_schemas import MatchResponse, MatchUpdate
 from apps.api.repositories.match_repository import MatchRepository
 from apps.api.repositories.lead_repository import LeadRepository
 from shared.utils.database import db
-from typing import List
+from typing import List, Dict, Any, Union
+from datetime import datetime, timezone
+from core.database import get_db_client
+from core.security import get_current_user_role
+from apps.api.schemas.property_schema_v2 import PropertyPublicResponse, PropertyInternalResponse
+from services.property.commission_shield import shield_property
 
 router = APIRouter(prefix="/matches", tags=["CRM Property Matching Engine"])
 import re
@@ -97,3 +101,104 @@ async def update_match_status_endpoint(match_id: str, payload: MatchUpdate):
     if not updated:
         raise HTTPException(status_code=404, detail="Recommendation block not found.")
     return updated
+
+
+@router.get("/lead/{lead_id}", response_model=List[Union[PropertyInternalResponse, PropertyPublicResponse]])
+async def get_lead_aware_matches(
+    lead_id: str,
+    role: str = Depends(get_current_user_role),
+    db: Any = Depends(get_db_client)
+) -> Union[List[PropertyInternalResponse], List[PropertyPublicResponse]]:
+    """
+    Executes a lead-aware inventory look-up. Automatically scores active listings against
+    stored lead configurations, persists recommendation blocks, and returns shielded variants.
+    """
+    leads_collection = db["leads"]
+    properties_collection = db["properties"]
+    
+    # Fetch customer tracking profile
+    lead = await leads_collection.find_one({"id": lead_id})
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead profile not found")
+        
+    reqs = lead.get("requirements", {})
+    area = reqs.get("area")
+    bhk = reqs.get("bhk")
+    listing_type = reqs.get("listing_type")
+    max_price = reqs.get("max_price")
+    
+    if not area or not bhk or not listing_type:
+        return [] # Requirements incomplete, yield empty subset smoothly
+        
+    # Execute the weighted matching calculation pipeline
+    match_filter: Dict[str, Any] = {
+        "status": "ACTIVE",
+        "availability_status": "VERIFIED",
+        "bhk": int(bhk),
+        "listing_type": listing_type,
+        "area": {"$regex": area, "$options": "i"}
+    }
+    if max_price:
+        match_filter["price"] = {"$lte": int(max_price)}
+        
+    pipeline = [
+        {"$match": match_filter},
+        {
+            "$lookup": {
+                "from": "broker_profiles",
+                "localField": "broker_phone",
+                "foreignField": "_id",
+                "as": "broker_info"
+            }
+        },
+        {"$addFields": {"broker_profile": {"$arrayElemAt": ["$broker_info", 0]}}},
+        {
+            "$addFields": {
+                "broker_reliability": {"$ifNull": ["$broker_profile.reliability_score", 100]},
+                "now": datetime.now(timezone.utc)
+            }
+        },
+        {"$addFields": {"days_since": {"$divide": [{"$subtract": ["$now", {"$ifNull": ["$last_verified_at", "$now"]}]}, 1000 * 60 * 60 * 24]}}},
+        {"$addFields": {"aging_penalty": {"$multiply": [{"$floor": "$days_since"}, 5]}}},
+        {"$addFields": {"computed_confidence": {"$subtract": ["$confidence_score", "$aging_penalty"]}}},
+        {
+            "$addFields": {
+                "clamped_confidence": {"$cond": {"if": {"$gt": ["$computed_confidence", 0]}, "then": "$computed_confidence", "else": 0}},
+                "structural_score": 100
+            }
+        },
+        {"$addFields": {"composite_score": {"$add": ["$structural_score", "$clamped_confidence", "$broker_reliability"]}}},
+        {"$sort": {"composite_score": -1}},
+        {"$limit": 3}
+    ]
+    
+    cursor = properties_collection.aggregate(pipeline)
+    matched_items = await cursor.to_list(length=3)
+    output_records = []
+    
+    for prop in matched_items:
+        prop_id = str(prop["_id"])
+        
+        # Determine tracking justifications
+        reasons = ["Matches Lead Profile"]
+        if prop.get("clamped_confidence", 100) >= 80:
+            reasons.append("High Inventory Freshness")
+        prop["match_reason"] = reasons
+        
+        # PERSIST RECOMMENDATION EVENT: Log transitions down the conversion pipeline
+        from apps.api.repositories.recommendation_repository import insert_recommendation_event
+        await insert_recommendation_event(
+            lead_id=lead_id,
+            property_id=prop_id,
+            event="SENT",
+            match_score=int(prop.get("composite_score", 200))
+        )
+        
+        # Apply data serialization boundaries
+        shielded = shield_property(prop, role=role)
+        if role == "PUBLIC":
+            output_records.append(PropertyPublicResponse.model_validate(shielded))
+        else:
+            output_records.append(PropertyInternalResponse.model_validate(shielded))
+        
+    return output_records

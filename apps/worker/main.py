@@ -40,4 +40,5 @@ celery_app.conf.imports = (
     "tasks.analytics_tasks",
     "tasks.webhook_tasks",
     "tasks.maintenance_tasks", # ADDED!
+    "tasks.whatsapp_tasks",
 )

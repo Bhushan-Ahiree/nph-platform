@@ -23,6 +23,11 @@ class SiteVisitUpdate(BaseModel):
     status: Optional[VisitStatus] = None
     notes: Optional[str] = None
     scheduled_at: Optional[datetime] = None
+    visit_fee: Optional[int] = None
+    fee_collected: Optional[bool] = None
+    collected_by: Optional[str] = None
+    visit_result: Optional[str] = None
+    deal_closed: Optional[bool] = None
 
 
 class SiteVisitResponse(BaseModel):
@@ -33,5 +38,10 @@ class SiteVisitResponse(BaseModel):
     status: VisitStatus = VisitStatus.SCHEDULED
     notes: Optional[str] = None
     created_at: datetime
+    visit_fee: int = 100
+    fee_collected: bool = False
+    collected_by: Optional[str] = None
+    visit_result: Optional[str] = None
+    deal_closed: bool = False
 
     model_config = {"populate_by_name": True}

@@ -1,7 +1,17 @@
 # shared/schemas/property.py
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, Any
+from typing import Optional, Any, List
 from datetime import datetime, timezone
+
+
+class SourceEntry(BaseModel):
+    """
+    A single cross-broker observation of a property listing.
+    Appended to the 'sources' array on ingestion_hash collision.
+    """
+    broker_phone: Optional[str] = None
+    group_name: Optional[str] = None
+    seen_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class PropertySource(BaseModel):
@@ -57,11 +67,32 @@ class PropertyBase(BaseModel):
 
     raw_message: Optional[str] = None
     status: str = "ACTIVE"
-    availability_status: str = "verified"
+    # Sprint A: expanded 5-state availability lifecycle
+    # Accepted values: NEW, VERIFIED, STALE, UNVERIFIED, ARCHIVED
+    # Legacy values (verified, stale, unverified, archived) are normalised in the validator.
+    availability_status: str = "NEW"
     last_verified_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     verification_count: int = 1
     confidence_score: int = 100
     broker_phone: Optional[str] = None
+
+    # Sprint A: cross-broker source tracking array
+    sources: List[SourceEntry] = Field(
+        default_factory=list,
+        description="All broker/group observations of this listing, chronological."
+    )
+
+    # Sprint A: raw message log linkage
+    raw_message_id: Optional[str] = Field(
+        None,
+        description="ID of the raw_message_logs document that produced this listing."
+    )
+
+    # Sprint A: LLM extraction confidence (0–100)
+    extraction_confidence: int = Field(
+        default=100,
+        description="Model parsing accuracy score set during ingestion."
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -158,15 +189,37 @@ class PropertyBase(BaseModel):
                 data["status"] = "ACTIVE"
 
             # Normalize availability_status and other auditing fields
-            if "availability_status" not in data or not data["availability_status"]:
-                data["availability_status"] = "verified"
+            # Legacy values: 'verified' → 'VERIFIED', 'stale' → 'STALE', etc.
+            _avail_map = {
+                "verified": "VERIFIED",
+                "stale": "STALE",
+                "unverified": "UNVERIFIED",
+                "archived": "ARCHIVED",
+                "new": "NEW",
+            }
+            raw_avail = data.get("availability_status")
+            if not raw_avail:
+                data["availability_status"] = "NEW"
+            elif raw_avail in ("NEW", "VERIFIED", "STALE", "UNVERIFIED", "ARCHIVED"):
+                pass  # already canonical
+            else:
+                data["availability_status"] = _avail_map.get(raw_avail.lower(), "NEW")
+
             if "last_verified_at" not in data or not data["last_verified_at"]:
                 data["last_verified_at"] = datetime.now(timezone.utc)
             if "verification_count" not in data or not data["verification_count"]:
                 data["verification_count"] = 1
             if "confidence_score" not in data or not data["confidence_score"]:
                 data["confidence_score"] = 100
-            
+
+            # Sprint A defaults
+            if "sources" not in data:
+                data["sources"] = []
+            if "raw_message_id" not in data:
+                data["raw_message_id"] = None
+            if "extraction_confidence" not in data:
+                data["extraction_confidence"] = 100
+
             # Map broker_phone from source if present and not set
             if "broker_phone" not in data or not data["broker_phone"]:
                 source = data.get("source")

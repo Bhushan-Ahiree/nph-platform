@@ -164,7 +164,7 @@ async def test_verify_endpoint_upgrades_broker_counters(api_client, mock_db):
         
         # Check updated property fields
         assert data["status"] == "ACTIVE"
-        assert data["availability_status"] == "verified"
+        assert data["availability_status"] == "VERIFIED"
         assert data["verification_count"] == 2
         assert data["confidence_score"] == 100
 
@@ -200,12 +200,31 @@ async def test_sweeper_decrements_confidence_and_increments_expired(mock_db):
     }
     await col.insert_one(stale_rent)
 
+    expired_rent = {
+        "title": "Expired Rent Apartment",
+        "price": 12000,
+        "area": "Indira Nagar",
+        "listing_type": "rent",
+        "property_type": "apartment",
+        "status": "ACTIVE",
+        "availability_status": "verified",
+        "confidence_score": 100,
+        "broker_phone": "+914444444444",
+        "created_at": datetime.now(timezone.utc) - timedelta(days=20),
+        "updated_at": datetime.now(timezone.utc) - timedelta(days=20)
+    }
+    await col.insert_one(expired_rent)
+
     sweep_inventory_freshness()
 
-    res = await col.find_one({"title": "Stale Rent Apartment"})
-    assert res["status"] == "UNVERIFIED"
-    assert res["availability_status"] == "stale"
-    assert res["confidence_score"] == 90
+    res_stale = await col.find_one({"title": "Stale Rent Apartment"})
+    assert res_stale["status"] == "ACTIVE"
+    assert res_stale["availability_status"] == "UNVERIFIED"
+    assert res_stale["confidence_score"] == 90
+
+    res_expired = await col.find_one({"title": "Expired Rent Apartment"})
+    assert res_expired["status"] == "ARCHIVED"
+    assert res_expired["availability_status"] == "ARCHIVED"
 
     broker = await mock_db.client.nph_core.broker_profiles.find_one({"_id": "+914444444444"})
     assert broker is not None

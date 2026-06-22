@@ -314,18 +314,35 @@ class TestWebhookRoutes:
 class TestSearchRoutes:
     """Tests /properties/search endpoint."""
 
+    @pytest.fixture(autouse=True)
+    def setup_auth_override(self, api_client):
+        from shared.utils.auth_guard import get_current_user
+        api_client.app.dependency_overrides[get_current_user] = lambda: {
+            "id": "test_user_id_123",
+            "email": "test@nph.com",
+            "role": "admin"
+        }
+        yield
+        api_client.app.dependency_overrides.clear()
+
     def test_search_empty_results(self, api_client):
-        response = api_client.get("/properties/search")
+        response = api_client.get("/properties/search", params={
+            "area": "NonexistentLocality",
+            "bhk": 3,
+            "listing_type": "rent"
+        })
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "success"
-        assert data["count"] == 0
+        assert isinstance(data, list)
+        assert len(data) == 0
 
     def test_search_with_filters(self, api_client):
         response = api_client.get("/properties/search", params={
             "bhk": 2,
             "area": "Indira Nagar",
+            "listing_type": "rent",
             "max_price": 20000,
         })
         assert response.status_code == 200
-        assert response.json()["status"] == "success"
+        data = response.json()
+        assert isinstance(data, list)

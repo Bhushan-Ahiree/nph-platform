@@ -6,6 +6,7 @@ import httpx
 from datetime import datetime, timezone
 from celery import shared_task
 from pymongo import MongoClient
+from apps.worker.tasks.whatsapp_tasks import send_whatsapp_message
 
 # MongoDB Setup
 mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
@@ -161,6 +162,7 @@ def process_incoming_message_event(event_id: str):
             reply_text = "Could you please reply with the exact option number (like 1 or 2) you'd like to visit?"
             print(f"=== OUTBOUND TO {sender} ===")
             print(reply_text)
+            send_whatsapp_message.delay(sender, reply_text)
             
             # Append assistant message to thread
             assistant_message = {
@@ -209,6 +211,7 @@ def process_incoming_message_event(event_id: str):
             reply_text = f"Great! I have logged a site visit request for {visits_created} propert(ies). Our ground team will call you shortly to schedule the exact time!"
             print(f"=== OUTBOUND TO {sender} ===")
             print(reply_text)
+            send_whatsapp_message.delay(sender, reply_text)
             
             assistant_message = {
                 "role": "assistant",
@@ -227,6 +230,7 @@ def process_incoming_message_event(event_id: str):
             reply_text = "Unfortunately, that property just got rented or the number was invalid. Which active option did you want?"
             print(f"=== OUTBOUND TO {sender} ===")
             print(reply_text)
+            send_whatsapp_message.delay(sender, reply_text)
             
             assistant_message = {
                 "role": "assistant",
@@ -286,6 +290,7 @@ def process_incoming_message_event(event_id: str):
     if lead["status"] != "MATCHABLE":
         print(f"=== OUTBOUND TO {sender} ===")
         print(reply_text)
+        send_whatsapp_message.delay(sender, reply_text)
         
         assistant_message = {
             "role": "assistant",
@@ -370,9 +375,11 @@ def process_incoming_message_event(event_id: str):
                 
                 reply_text = recommendation_text + "Reply with the option number (e.g. 1 or 2) to book a site visit!"
                 print(reply_text)
+                send_whatsapp_message.delay(sender, reply_text)
             else:
                 reply_text = "I have all your requirements, but currently no active properties match. I'll notify you when one arrives."
                 print(reply_text)
+                send_whatsapp_message.delay(sender, reply_text)
                 
             assistant_message = {
                 "role": "assistant",
