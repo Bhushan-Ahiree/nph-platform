@@ -1,10 +1,14 @@
 # apps/api/routers/inventory.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
+from datetime import datetime, timezone
+import logging
 from services.property.extractor import extract_property_details
 from apps.api.repositories.property_repository import property_repo
 from apps.api.schemas.property_schema_v2 import PropertySchemaV2
 from shared.utils.database import db  # Use your existing db utility
+
+logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/inventory", tags=["Inventory Intelligence"])
 
@@ -12,11 +16,16 @@ class IngestRequest(BaseModel):
     raw_message: str
 
 @router.post("/ingest")
-async def ingest_property_message(request: IngestRequest):
+async def ingest_property_message(request: IngestRequest, response: Response):
     """
     Takes a raw broker message, uses Llama 3.2 to extract the intelligence,
     maps flat LLM keys into the nested V2 schema layout, and upserts it.
     """
+    # Log deprecation warning with timestamp
+    logger.warning(f"[{datetime.now(timezone.utc).isoformat()}] DEPRECATION WARNING: POST /inventory/ingest is deprecated. Use POST /properties/raw-chunk instead.")
+    # Add deprecation header
+    response.headers["X-Deprecated"] = "true"
+
     # Grab the active database collection safely at execution time
     if db.client is None:
         raise HTTPException(status_code=500, detail="Database client is not initialized.")

@@ -1,5 +1,7 @@
 # services/whatsapp/client.py
 import os
+import sys
+import uuid
 import logging
 import httpx
 from typing import Dict, Any, Optional
@@ -48,6 +50,18 @@ class MetaWhatsAppClient:
                 "body": text
             }
         }
+
+        # Check if we are using a mock token outside a pytest testing environment.
+        # This prevents 401 Unauthorized API failures when running locally without real Meta API keys.
+        is_testing = "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
+        if self.access_token.startswith("mock_") and not is_testing:
+            mock_id = f"mock_wamid_{uuid.uuid4().hex[:16]}"
+            logger.info(f"[WhatsApp Client] [SIMULATED] Outbound message successfully processed. Meta ID: {mock_id}")
+            return {
+                "messaging_product": "whatsapp",
+                "contacts": [{"input": clean_to, "wa_id": clean_to}],
+                "messages": [{"id": mock_id}]
+            }
 
         logger.info(f"[WhatsApp Client] Dispatching message to {clean_to}: {text[:50]}...")
         

@@ -6,6 +6,8 @@ from typing import Optional, List, Dict, Any
 from pymongo import ReturnDocument
 
 
+from shared.utils.normalization import compute_ingestion_hash
+
 class PropertyRepository:
     """Isolates all structural database execution logic for inventory intelligence."""
 
@@ -45,12 +47,10 @@ class PropertyRepository:
         Structural deduplication lookup for the mass ingestion pipeline.
 
         Queries the 'properties' collection for an existing ACTIVE document bearing
-        the specified SHA-256 ingestion_hash. The hash is constructed upstream from
-        price + area + bhk + listing_type + broker_phone so it is structurally unique
-        per broker-property combination.
+        the specified SHA-256 ingestion_hash. The hash is derived from price + area
+        + bhk + listing_type + broker_phone.
 
-        Returns the matching document if found (caller should DROP the candidate),
-        or None if the hash is unique (caller should INSERT the new document).
+        Returns the matching document if found, or None if unique.
         """
         collection = self.get_collection()
         return await collection.find_one({
@@ -73,82 +73,101 @@ class PropertyRepository:
     async def upsert_property(self, collection, property_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Intelligently inserts or updates a property to prevent broker spam duplicates.
-        Increments the duplicate_count automatically if seen multiple times.
-        Initializes the 'ingestion_hash' field if one is provided in property_data,
-        enabling the SHA-256 structural deduplication pipeline added in P0.
+        Enforces unique SHA-256 ingestion_hash checks to prevent duplicate listings.
+        On duplicate collision, appends a source tracking entry and increments duplicate count.
         """
-        # Ensure a unique property ID exists
+        # Resolve broker phone and clean it to 10 digits
+        broker_phone = property_data.get("broker_phone")
+        if not broker_phone:
+            source = property_data.get("source")
+            if isinstance(source, dict):
+                broker_phone = source.get("broker_phone")
+        
+        clean_phone = None
+        if broker_phone:
+            clean_phone = re.sub(r"\D", "", str(broker_phone))
+            if len(clean_phone) == 12 and clean_phone.startswith("91"):
+                clean_phone = clean_phone[2:]
+            if len(clean_phone) != 10:
+                clean_phone = clean_phone if clean_phone else None
+
+        # Determine ingestion hash
+        ingestion_hash = property_data.get("ingestion_hash")
+        if not ingestion_hash:
+            ingestion_hash = compute_ingestion_hash(
+                price=property_data.get("price", 0),
+                area=property_data.get("area", ""),
+                bhk=property_data.get("bhk", 0),
+                listing_type=property_data.get("listing_type", "rent"),
+                broker_phone=clean_phone
+            )
+            property_data["ingestion_hash"] = ingestion_hash
+
+        # Check for duplication on ACTIVE hash collision
+        existing = await collection.find_one({
+            "ingestion_hash": ingestion_hash,
+            "status": "ACTIVE"
+        })
+
+        group_name = None
+        source = property_data.get("source")
+        if isinstance(source, dict):
+            group_name = source.get("group_name")
+
+        if existing:
+            # Collision found — run collision workflow (append broker to sources array)
+            result = await self.append_source_entry(
+                ingestion_hash=ingestion_hash,
+                broker_phone=clean_phone,
+                group_name=group_name
+            )
+            return result
+
+        # No collision — proceed to insert a new property document
         if "property_id" not in property_data:
             property_data["property_id"] = f"prop_{uuid.uuid4().hex[:8]}"
 
-        # Force the updated timestamp to right now using timezone-aware UTC
+        property_data["created_at"] = property_data.get("created_at") or datetime.now(timezone.utc)
         property_data["updated_at"] = datetime.now(timezone.utc)
-        if "status" not in property_data:
-            property_data["status"] = "ACTIVE"
+        property_data["status"] = "ACTIVE"
+        
         if "availability_status" not in property_data:
-            property_data["availability_status"] = "verified"
+            property_data["availability_status"] = "NEW"
         if "last_verified_at" not in property_data:
             property_data["last_verified_at"] = datetime.now(timezone.utc)
         if "verification_count" not in property_data:
             property_data["verification_count"] = 1
         if "confidence_score" not in property_data:
             property_data["confidence_score"] = 100
-        # Initialise ingestion_hash to None if not explicitly provided; the mass
-        # ingestion pipeline always supplies it, manual routes leave it absent.
-        if "ingestion_hash" not in property_data:
-            property_data["ingestion_hash"] = None
-        if "broker_phone" not in property_data or not property_data["broker_phone"]:
-            source = property_data.get("source")
-            if isinstance(source, dict):
-                property_data["broker_phone"] = source.get("broker_phone")
 
-        # Detach 'intelligence' from the $set block to avoid ConflictingUpdateOperators
-        if "intelligence" in property_data:
-            del property_data["intelligence"]
+        # Initialize sources array
+        if "sources" not in property_data or not property_data["sources"]:
+            property_data["sources"] = [{
+                "broker_phone": clean_phone,
+                "group_name": group_name,
+                "seen_at": datetime.now(timezone.utc)
+            }]
 
-        # Extract created_at so it is ONLY set when a new document is inserted
-        created_at_val = property_data.pop("created_at", datetime.now(timezone.utc))
-
-        # The Uniqueness Constraint: Are we seeing the same property from the same broker?
-        filter_query = {
-            "bhk": property_data.get("bhk"),
-            "area": property_data.get("area"),
-            "listing_type": property_data.get("listing_type"),
-            "source.broker_name": property_data.get("source", {}).get("broker_name")
-        }
-
-        # The Operation: Update existing data and increment the spam/duplicate counter
-        update_op = {
-            "$set": property_data,
-            "$inc": {"intelligence.duplicate_count": 1},
-            "$setOnInsert": {
-                "created_at": created_at_val,
-                "intelligence.hot_property": False,
-                "intelligence.source_confidence": 100
+        if "intelligence" not in property_data:
+            property_data["intelligence"] = {
+                "hot_property": False,
+                "duplicate_count": 0,
+                "source_confidence": 100
             }
-        }
+        else:
+            if isinstance(property_data["intelligence"], dict):
+                property_data["intelligence"]["duplicate_count"] = 0
 
-        # Execute the transaction
-        result = await collection.find_one_and_update(
-            filter_query,
-            update_op,
-            upsert=True,
-            return_document=ReturnDocument.AFTER
-        )
+        await collection.insert_one(property_data)
 
-        # Cleanup ObjectId for clean JSON serialization out of the API
-        if result and "_id" in result:
-            result["_id"] = str(result["_id"])
+        if "_id" in property_data:
+            property_data["_id"] = str(property_data["_id"])
 
-        if result:
-            intelligence = result.get("intelligence", {})
-            dup_count = intelligence.get("duplicate_count", 1)
-            broker_phone = result.get("broker_phone")
-            if dup_count == 1 and broker_phone:
-                from apps.api.repositories.broker_repository import broker_repo
-                await broker_repo.increment_property_counter(broker_phone, "properties_posted")
+        if clean_phone:
+            from apps.api.repositories.broker_repository import broker_repo
+            await broker_repo.increment_property_counter(clean_phone, "properties_posted")
 
-        return result
+        return property_data
 
     async def append_source_entry(
         self,
