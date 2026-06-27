@@ -366,7 +366,7 @@ class TestRawChunkRoute:
             )
         }
 
-    @patch("apps.api.routes.property.webhook_event_repo")
+    @patch("apps.api.routers.property.webhook_event_repo")
     def test_raw_chunk_returns_202_accepted(self, mock_repo, api_client):
         """A valid raw chunk payload must always return 202 Accepted immediately."""
         mock_event = {
@@ -377,7 +377,7 @@ class TestRawChunkRoute:
         }
         mock_repo.insert_or_ignore_by_hash = AsyncMock(return_value=mock_event)
 
-        with patch("apps.api.routes.property.Celery") as mock_celery_cls:
+        with patch("apps.api.routers.property.Celery") as mock_celery_cls:
             mock_celery_instance = MagicMock()
             mock_celery_cls.return_value = mock_celery_instance
             mock_task = MagicMock()
@@ -393,7 +393,7 @@ class TestRawChunkRoute:
         assert data["task_id"] == "task_id_xyz789"
         assert "accepted" in data["message"].lower()
 
-    @patch("apps.api.routes.property.webhook_event_repo")
+    @patch("apps.api.routers.property.webhook_event_repo")
     def test_raw_chunk_duplicate_payload_returns_202_with_duplicate_status(
         self, mock_repo, api_client
     ):
@@ -442,7 +442,7 @@ class TestRawChunkRoute:
         response = api_client.post("/properties/raw-chunk", json={})
         assert response.status_code == 422
 
-    @patch("apps.api.routes.property.webhook_event_repo")
+    @patch("apps.api.routers.property.webhook_event_repo")
     def test_celery_dispatch_failure_still_returns_202(self, mock_repo, api_client):
         """Even if Celery dispatch raises an exception, the API must return 202
         (the event is persisted; it can be replayed later)."""
@@ -454,7 +454,7 @@ class TestRawChunkRoute:
         }
         mock_repo.insert_or_ignore_by_hash = AsyncMock(return_value=mock_event)
 
-        with patch("apps.api.routes.property.Celery") as mock_celery_cls:
+        with patch("apps.api.routers.property.Celery") as mock_celery_cls:
             # Simulate a Redis connection failure at dispatch time
             mock_celery_cls.return_value.send_task.side_effect = ConnectionError("Redis unavailable")
 

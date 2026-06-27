@@ -16,7 +16,7 @@ async def process_bulk_file(group_name: str, filepath: str):
     with open(filepath, "r", encoding="utf-8") as f:
         content = f.read()
 
-    print(f"📦 Read {len(content)} characters of raw dump. Ingesting to NPH pipeline...")
+    print(f"[PACK] Read {len(content)} characters of raw dump. Ingesting to NPH pipeline...")
 
     payload = {
         "source_group": group_name,
@@ -27,11 +27,11 @@ async def process_bulk_file(group_name: str, filepath: str):
         async with httpx.AsyncClient() as client:
             response = await client.post(API_URL, json=payload, timeout=60.0)
             if response.status_code == 202:
-                print(f"✅ Successfully ingested. Response: {response.json()}")
+                print(f"[OK] Successfully ingested. Response: {response.json()}")
             else:
-                print(f"❌ Failed: [{response.status_code}] {response.text}")
+                print(f"[ERROR] Failed: [{response.status_code}] {response.text}")
     except Exception as e:
-        print(f"⚠️ Error: {str(e)}")
+        print(f"[WARN] Error: {str(e)}")
 
 if __name__ == "__main__":
     # Ensure group name and file path were passed as arguments

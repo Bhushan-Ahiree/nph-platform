@@ -37,7 +37,6 @@ celery_app.conf.update(
 # FIXED: Explicitly register task modules via direct string imports
 celery_app.conf.imports = (
     "tasks.ingestion_tasks",
-    "tasks.analytics_tasks",
     "tasks.webhook_tasks",
     "tasks.maintenance_tasks", # ADDED!
     "tasks.whatsapp_tasks",

@@ -9,7 +9,7 @@ Built for high-performance data ingestion, automated normalization, and AI-modul
 - `apps/api/` - Core backend (FastAPI)
 - `apps/scraper/` - Data acquisition engine (Scrapy/Playwright) *[Pending]*
 - `apps/worker/` - Async task processing (Celery) *[Pending]*
-- `apps/dashboard/` - Internal operational UI (Next.js) *[Pending]*
+
 - `shared/` - Unified Pydantic schemas, database connections, and types
 - `infrastructure/` - Docker configurations and deployment pipelines
 

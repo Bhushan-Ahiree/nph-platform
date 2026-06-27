@@ -742,7 +742,7 @@ class TestVerifyAndInactiveRoutes:
             "last_verified_at": datetime.now(timezone.utc),
         }
 
-        with patch("apps.api.routes.property.property_repo") as mock_repo:
+        with patch("apps.api.routers.property.property_repo") as mock_repo:
             mock_col = AsyncMock()
             mock_col.find_one = AsyncMock(return_value=prop_doc)
             mock_repo.get_collection.return_value = mock_col
@@ -777,7 +777,7 @@ class TestVerifyAndInactiveRoutes:
             "last_verified_at": datetime.now(timezone.utc),
         }
 
-        with patch("apps.api.routes.property.property_repo") as mock_repo:
+        with patch("apps.api.routers.property.property_repo") as mock_repo:
             mock_col = AsyncMock()
             mock_col.find_one = AsyncMock(return_value=prop_doc)
             mock_repo.get_collection.return_value = mock_col
@@ -800,7 +800,7 @@ class TestVerifyAndInactiveRoutes:
         updated_doc = {**prop_doc, "verification_count": 8, "availability_status": "VERIFIED",
                        "confidence_score": 100, "last_verified_at": datetime.now(timezone.utc)}
 
-        with patch("apps.api.routes.property.property_repo") as mock_repo:
+        with patch("apps.api.routers.property.property_repo") as mock_repo:
             mock_col = AsyncMock()
             mock_col.find_one = AsyncMock(return_value=prop_doc)
             mock_repo.get_collection.return_value = mock_col
@@ -817,7 +817,7 @@ class TestVerifyAndInactiveRoutes:
 
     def test_verify_nonexistent_property_returns_404(self, api_client, auth_token):
         """PATCH /verify on a non-existent property must return 404."""
-        with patch("apps.api.routes.property.property_repo") as mock_repo:
+        with patch("apps.api.routers.property.property_repo") as mock_repo:
             mock_col = AsyncMock()
             mock_col.find_one = AsyncMock(return_value=None)
             mock_repo.get_collection.return_value = mock_col
@@ -840,7 +840,7 @@ class TestVerifyAndInactiveRoutes:
             "availability_status": "ARCHIVED",
         }
 
-        with patch("apps.api.routes.property.property_repo") as mock_repo:
+        with patch("apps.api.routers.property.property_repo") as mock_repo:
             mock_col = AsyncMock()
             mock_col.find_one = AsyncMock(return_value=prop_doc)
             mock_repo.get_collection.return_value = mock_col
@@ -864,7 +864,7 @@ class TestVerifyAndInactiveRoutes:
         prop_doc = self._make_prop_doc("prop_inactive_002")
         updated_doc = {**prop_doc, "status": "ARCHIVED", "availability_status": "ARCHIVED"}
 
-        with patch("apps.api.routes.property.property_repo") as mock_repo:
+        with patch("apps.api.routers.property.property_repo") as mock_repo:
             mock_col = AsyncMock()
             mock_col.find_one = AsyncMock(return_value=prop_doc)
             mock_repo.get_collection.return_value = mock_col
@@ -882,7 +882,7 @@ class TestVerifyAndInactiveRoutes:
 
     def test_inactive_nonexistent_property_returns_404(self, api_client, auth_token):
         """PATCH /inactive on a non-existent property must return 404."""
-        with patch("apps.api.routes.property.property_repo") as mock_repo:
+        with patch("apps.api.routers.property.property_repo") as mock_repo:
             mock_col = AsyncMock()
             mock_col.find_one = AsyncMock(return_value=None)
             mock_repo.get_collection.return_value = mock_col

@@ -3,7 +3,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 
 def calculate_base_structural_match_score(prop: Dict[str, Any], reqs: Dict[str, Any]) -> int:
-    """Calculates base structural match score up to 100 points."""
+    """Calculates base structural match score up to 130 points."""
     score = 0
     # 1. Area Match Analysis (Weight: 40 Points)
     prop_area = prop.get("area", "").lower().strip()
@@ -32,6 +32,13 @@ def calculate_base_structural_match_score(prop: Dict[str, Any], reqs: Dict[str, 
     if prop.get("parking") == reqs.get("parking", False):
         score += 10
         
+    # 5. Ownership Type Bonus (Weight: 30 Points)
+    ownership = prop.get("ownership_type", "broker")
+    if ownership == "owner":
+        score += 30
+    elif ownership == "verified_broker":
+        score += 15
+
     return score
 
 def calculate_dynamic_property_confidence(prop: Dict[str, Any]) -> int:
@@ -113,15 +120,29 @@ async def find_matches_for_lead(lead_data: Dict[str, Any]) -> List[Dict[str, Any
         
         scored_matches = []
         for prop in raw_matches:
-            structural_score = calculate_base_structural_match_score(prop, lead_data)
-            prop_confidence = calculate_dynamic_property_confidence(prop)
-            
             broker_phone = prop.get("broker_phone")
-            broker_reliability = await get_broker_reliability_score(broker_phone)
+            broker_reliability = 100
+            is_verified = False
+            
+            if broker_phone:
+                from shared.utils.database import db
+                if db.client is not None:
+                    broker = await db.client.nph_core.broker_profiles.find_one({"_id": broker_phone})
+                    if broker:
+                        broker_reliability = max(0, broker.get("reliability_score", 100))
+                        is_verified = broker.get("verified", False)
+            
+            # Create copy to avoid mutating cache / raw documents
+            prop_scored = dict(prop)
+            if is_verified and prop_scored.get("ownership_type", "broker") == "broker":
+                prop_scored["ownership_type"] = "verified_broker"
+                
+            structural_score = calculate_base_structural_match_score(prop_scored, lead_data)
+            prop_confidence = calculate_dynamic_property_confidence(prop_scored)
             
             composite_score = structural_score + prop_confidence + broker_reliability
-            prop["match_score"] = composite_score
-            scored_matches.append(prop)
+            prop_scored["match_score"] = composite_score
+            scored_matches.append(prop_scored)
             
         scored_matches.sort(key=lambda x: x["match_score"], reverse=True)
         return scored_matches[:3]

@@ -226,19 +226,7 @@ class TestSystemRoutes:
             response = api_client.get("/system/health")
             assert response.status_code == 503
 
-    @patch("apps.api.routers.system.celery_client")
-    def test_trigger_analytics(self, mock_celery, api_client):
-        mock_task = MagicMock()
-        mock_task.id = "test_task_id_123"
-        mock_celery.send_task.return_value = mock_task
 
-        response = api_client.post("/system/trigger-analytics", json={
-            "locality": "Indira Nagar"
-        })
-        assert response.status_code == 202
-        data = response.json()
-        assert data["status"] == "queued"
-        assert data["target_locality"] == "Indira Nagar"
 
 
 class TestAnalyticsRoutes:
@@ -280,7 +268,7 @@ class TestWebhookRoutes:
         })
         assert response.status_code == 403
 
-    @patch("apps.api.routes.webhooks.process_incoming_message_event")
+    @patch("apps.api.routers.webhooks.process_incoming_message_event")
     def test_whatsapp_message_ingestion(self, mock_celery_task, api_client):
         mock_celery_task.delay = MagicMock()
         payload = {

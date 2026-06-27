@@ -11,22 +11,22 @@ logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from apps.api.routes.auth import router as auth_router
-from apps.api.routes.property import router as property_router
+from apps.api.routers.auth import router as auth_router
+from apps.api.routers.property import router as property_router
 from apps.api.routers.system import router as system_router
 from apps.api.routers.lead import router as lead_router
+from apps.api.routers.operator_actions import router as operator_actions_router
 from apps.api.routers.conversation import router as conversation_router
-from apps.api.routes.match import router as match_router
-from apps.api.routes.webhooks import router as webhook_router
+from apps.api.routers.match import router as match_router
+from apps.api.routers.webhooks import router as webhook_router
 from apps.api.repositories.lead_repository import LeadRepository
 from apps.api.repositories.conversation_repository import ConversationRepository
 from apps.api.repositories.match_repository import MatchRepository
-from apps.api.routes.analytics import router as analytics_router
+from apps.api.routers.analytics import router as analytics_router
 from apps.api.repositories.webhook_event_repository import WebhookEventRepository
-from apps.api.routers import inventory
 from shared.utils.database import close_mongo_connection, connect_to_mongo
 from apps.api.routers import search
-from apps.api.routes.site_visit import router as site_visits_router
+from apps.api.routers.site_visit import router as site_visits_router
 from apps.api.repositories.site_visit_repository import site_visit_repo
 
 
@@ -81,11 +81,11 @@ app.include_router(auth_router)
 app.include_router(property_router)
 app.include_router(system_router)
 app.include_router(lead_router)
+app.include_router(operator_actions_router)
 app.include_router(conversation_router)
 app.include_router(match_router)
 app.include_router(analytics_router)
 app.include_router(webhook_router)
-app.include_router(inventory.router)
 app.include_router(search.router)
 app.include_router(site_visits_router)
 

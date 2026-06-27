@@ -1,6 +1,6 @@
 # apps/api/routes/analytics.py
 from fastapi import APIRouter, HTTPException, status
-from apps.api.schemas.analytics_schemas import PipelineSummaryResponse
+from apps.api.schemas.analytics_schemas import PipelineSummaryResponse, LeadSummaryResponse
 from apps.api.schemas.lead_schemas import LeadResponse
 from apps.api.repositories.analytics_repository import AnalyticsRepository
 from apps.api.repositories.lead_repository import LeadRepository
@@ -41,3 +41,34 @@ async def get_system_pipeline_dashboard_metrics():
         return await analytics_repo.get_pipeline_metrics()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Metrics compilation failed: {str(e)}")
+
+@router.get("/lead-summary", response_model=LeadSummaryResponse)
+async def get_lead_summary_metrics():
+    """Generates counts for the CRM operations summary."""
+    leads_col = analytics_repo.leads_col
+    
+    total = await leads_col.count_documents({})
+    hot = await leads_col.count_documents({"lead_temperature": "HOT"})
+    warm = await leads_col.count_documents({"lead_temperature": "WARM"})
+    cold = await leads_col.count_documents({"lead_temperature": "COLD"})
+    
+    clients = await leads_col.count_documents({"lead_type": "CLIENT"})
+    brokers = await leads_col.count_documents({"lead_type": "BROKER"})
+    owners = await leads_col.count_documents({"lead_type": "OWNER"})
+    
+    instagram = await leads_col.count_documents({"source": "instagram"})
+    whatsapp = await leads_col.count_documents({"source": "whatsapp"})
+    website = await leads_col.count_documents({"source": "website"})
+    
+    return {
+        "total_leads": total,
+        "hot_leads": hot,
+        "warm_leads": warm,
+        "cold_leads": cold,
+        "clients": clients,
+        "brokers": brokers,
+        "owners": owners,
+        "instagram": instagram,
+        "whatsapp": whatsapp,
+        "website": website
+    }

@@ -95,6 +95,7 @@ def normalise_extracted_property(
     valid_property_types = {"apartment", "villa", "plot", "commercial", "flat", "land"}
     valid_listing_types = {"rent", "buy", "sale"}
     valid_cities = {"Nashik", "Pune", "Mumbai"}
+    valid_ownership_types = {"owner", "verified_broker", "broker"}
 
     property_type = clean_str(raw.get("property_type"), "apartment").lower()
     if property_type not in valid_property_types:
@@ -107,6 +108,11 @@ def normalise_extracted_property(
     city = clean_str(raw.get("city"), "Nashik").strip().title()
     if city not in valid_cities:
         city = "Nashik"
+
+    # Ownership type — extracted by LLM or defaulted to "broker"
+    ownership_type = clean_str(raw.get("ownership_type"), "broker").lower()
+    if ownership_type not in valid_ownership_types:
+        ownership_type = "broker"
 
     broker_phone = clean_phone(raw.get("broker_phone"))
     now = datetime.now(timezone.utc)
@@ -127,9 +133,13 @@ def normalise_extracted_property(
         # Broker phone extracted as a flat field (top-level, per V2 schema)
         "broker_phone": broker_phone,
 
+        # Ownership type — owner > verified_broker > broker
+        # Used by search/matching scoring to rank direct owner listings higher.
+        "ownership_type": ownership_type,
+
         # Source metadata sub-document (primary origination, legacy compat)
         "source": {
-            "type": "broker_group",
+            "type": "owner_network" if ownership_type == "owner" else "broker_group",
             "group_name": source_group,
             "broker_name": "NPH Ingestion Bot",
             "broker_phone": broker_phone,

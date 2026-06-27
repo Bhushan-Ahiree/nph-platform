@@ -236,6 +236,40 @@ class MockCollection:
                 limit_val = stage["$limit"]
                 current_data = current_data[:limit_val]
                 
+            elif "$facet" in stage:
+                facet_conf = stage["$facet"]
+                facet_results = {}
+                for facet_key, facet_pipeline in facet_conf.items():
+                    if facet_key == "total_count":
+                        facet_results[facet_key] = [{"count": len(current_data)}]
+                    else:
+                        sub_data = [doc.copy() for doc in current_data]
+                        for sub_stage in facet_pipeline:
+                            if "$match" in sub_stage:
+                                match_criteria = sub_stage["$match"]
+                                sub_filtered = []
+                                for doc in sub_data:
+                                    keep = True
+                                    for k, v in match_criteria.items():
+                                        if doc.get(k) != v:
+                                            keep = False
+                                    if keep:
+                                        sub_filtered.append(doc)
+                                sub_data = sub_filtered
+                            elif "$sort" in sub_stage:
+                                sort_config = sub_stage["$sort"]
+                                field = list(sort_config.keys())[0]
+                                direction = sort_config[field]
+                                sub_data.sort(key=lambda x: x.get(field, 0), reverse=(direction == -1))
+                            elif "$project" in sub_stage:
+                                projection = sub_stage["$project"]
+                                keys_to_remove = [k for k, v in projection.items() if v == 0]
+                                for doc in sub_data:
+                                    for k in keys_to_remove:
+                                        doc.pop(k, None)
+                        facet_results[facet_key] = sub_data
+                current_data = [facet_results]
+                
         return MockCursor(current_data)
 
     def _matches(self, doc, filter_query):
@@ -476,17 +510,18 @@ def api_client():
     from fastapi.middleware.cors import CORSMiddleware
 
     # Build a test app without lifespan (no real DB connection)
-    from apps.api.routes.auth import router as auth_router
-    from apps.api.routes.property import router as property_router
+    from apps.api.routers.auth import router as auth_router
+    from apps.api.routers.property import router as property_router
     from apps.api.routers.system import router as system_router
     from apps.api.routers.lead import router as lead_router
     from apps.api.routers.conversation import router as conversation_router
-    from apps.api.routes.match import router as match_router
-    from apps.api.routes.analytics import router as analytics_router
-    from apps.api.routes.webhooks import router as webhook_router
+    from apps.api.routers.match import router as match_router
+    from apps.api.routers.analytics import router as analytics_router
+    from apps.api.routers.webhooks import router as webhook_router
     from apps.api.routers import inventory
     from apps.api.routers import search
-    from apps.api.routes.site_visit import router as site_visits_router
+    from apps.api.routers.site_visit import router as site_visits_router
+    from apps.api.routers.operator_actions import router as operator_actions_router
 
     test_app = FastAPI(title="NPH Test")
     test_app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
@@ -503,6 +538,7 @@ def api_client():
     test_app.include_router(inventory.router)
     test_app.include_router(search.router)
     test_app.include_router(site_visits_router)
+    test_app.include_router(operator_actions_router)
 
     @test_app.get("/")
     async def root():

@@ -56,6 +56,10 @@ Your task is to:
    - "bhk": Integer number of bedrooms (0 if not mentioned or non-residential)
    - "price": Integer price in INR (monthly rent or sale price, no commas or symbols)
    - "broker_phone": The phone number of the person advertising this property. Extract digits only, no spaces or dashes. Use null if not found.
+   - "ownership_type": One of: "owner", "broker"
+     Set to "owner" if the message says: "direct owner", "owner", "malik", "no brokerage", "malak", "brokerage free", "direct deal".
+     Set to "broker" if the message says: "broker", "agent", or has no clear ownership indicator.
+     Default to "broker" if unsure.
 
 IMPORTANT RULES:
 - Output ONLY a valid JSON array. No explanation, no markdown, no extra text.
@@ -76,9 +80,11 @@ Example output:
     "area": "Indira Nagar",
     "bhk": 2,
     "price": 12000,
-    "broker_phone": "9876543210"
+    "broker_phone": "9876543210",
+    "ownership_type": "broker"
   }
 ]"""
+
 
 
 # ---------------------------------------------------------------------------
@@ -465,7 +471,8 @@ def process_raw_group_dump(self, source_group: str, raw_text: str, event_id: str
                                     "properties_posted": 0,
                                     "verified_properties": 0,
                                     "expired_properties": 0,
-                                    "reliability_score": 100
+                                    "reliability_score": 100,
+                                    "verified": False
                                 }
                             },
                             upsert=True
@@ -499,6 +506,17 @@ def process_raw_group_dump(self, source_group: str, raw_text: str, event_id: str
                     f"INSERTED '{property_doc.get('title')}' "
                     f"(hash={ingestion_hash[:16]}…, phone={broker_phone}, raw_log={raw_log_id})"
                 )
+                
+                # Trigger reverse matching for the newly inserted property
+                notify_matching_leads.delay({
+                    "property_id": property_doc["property_id"],
+                    "area": property_doc["area"],
+                    "bhk": property_doc["bhk"],
+                    "listing_type": property_doc["listing_type"],
+                    "price": property_doc["price"],
+                    "broker_phone": property_doc.get("broker_phone"),
+                    "ownership_type": property_doc.get("ownership_type", "broker"),
+                })
 
     except Exception as task_err:
         logger.error(f"[Ingestion Task] [{task_id}] Fatal error: {task_err}", exc_info=True)
@@ -559,23 +577,156 @@ def process_raw_group_dump(self, source_group: str, raw_text: str, event_id: str
 
 
 # ---------------------------------------------------------------------------
-# Legacy task — preserved for backward compatibility
+# Reverse Matching Task — notifies leads when a matching property is ingested
 # ---------------------------------------------------------------------------
 
 @shared_task(
-    name="tasks.ingestion_tasks.process_raw_scraped_listing",
+    name="tasks.ingestion_tasks.notify_matching_leads",
     bind=True,
     max_retries=3,
     autoretry_for=(Exception,),
     retry_backoff=2,
     retry_jitter=True
 )
-def process_raw_scraped_listing(self, raw_data: dict):
-    """Offloads background data structure cleaning, normalization auditing, and verification checks."""
-    task_id = self.request.id
-    print(f"[Worker Task] [{task_id}] Initiating structural normalizer verification for target: {raw_data.get('title')}")
+def notify_matching_leads(self, property_doc: dict):
+    """
+    Reverse matching: when a new property is inserted,
+    find all MATCHABLE or PROPERTIES_SENT leads whose requirements fit,
+    and send them WhatsApp notifications.
+    """
+    import os
+    import uuid
+    from datetime import datetime, timezone
+    from pymongo import MongoClient
+    from apps.worker.tasks.whatsapp_tasks import send_whatsapp_message
+    from services.matching.engine import calculate_base_structural_match_score, calculate_dynamic_property_confidence
 
-    time.sleep(1.5)
+    mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
+    client = MongoClient(mongo_url)
+    db = client["nph_core"]
 
-    print(f"[Worker Task] [{task_id}] Validation boundaries verified clean for payload.")
-    return {"status": "sanitized", "title": raw_data.get("title")}
+    try:
+        # Find leads with MATCHABLE or PROPERTIES_SENT status
+        leads = list(db["leads"].find({
+            "status": {"$in": ["MATCHABLE", "PROPERTIES_SENT"]},
+            "requirements.bhk": property_doc["bhk"],
+            "requirements.listing_type": property_doc["listing_type"]
+        }))
+
+        logger.info(
+            f"[Reverse Match] Checking {len(leads)} candidate leads "
+            f"for property {property_doc['property_id']} ({property_doc['bhk']} BHK, {property_doc['area']})"
+        )
+
+        for lead in leads:
+            reqs = lead.get("requirements", {})
+            
+            # 1. Area matching (case-insensitive substring containment)
+            lead_area = reqs.get("area")
+            prop_area = property_doc.get("area")
+            if not lead_area or not prop_area:
+                continue
+            if lead_area.lower().strip() not in prop_area.lower().strip() and prop_area.lower().strip() not in lead_area.lower().strip():
+                continue
+                
+            # 2. Price check
+            max_price = reqs.get("max_price")
+            prop_price = property_doc.get("price", 0)
+            if max_price is not None and prop_price > max_price:
+                continue
+
+            # 3. Prevent duplicate notifications for the same property to this lead
+            already_sent = db["recommendation_history"].find_one({
+                "lead_id": lead["id"],
+                "property_id": property_doc["property_id"]
+            })
+            if already_sent:
+                logger.info(f"[Reverse Match] Lead {lead['id']} already notified of {property_doc['property_id']}. Skipping.")
+                continue
+
+            # 4. Calculate dynamic match score
+            broker_phone = property_doc.get("broker_phone")
+            broker_reliability = 100
+            is_verified = False
+            if broker_phone:
+                broker = db["broker_profiles"].find_one({"_id": broker_phone})
+                if broker:
+                    broker_reliability = max(0, broker.get("reliability_score", 100))
+                    is_verified = broker.get("verified", False)
+
+            prop_scored = dict(property_doc)
+            if is_verified and prop_scored.get("ownership_type", "broker") == "broker":
+                prop_scored["ownership_type"] = "verified_broker"
+
+            structural_score = calculate_base_structural_match_score(prop_scored, reqs)
+            prop_confidence = calculate_dynamic_property_confidence(prop_scored)
+            composite_score = structural_score + prop_confidence + broker_reliability
+
+            # 5. Insert recommendation event
+            recommendation = {
+                "lead_id": lead["id"],
+                "property_id": property_doc["property_id"],
+                "score": composite_score,
+                "sent_at": datetime.now(timezone.utc)
+            }
+            db["recommendation_history"].insert_one(recommendation)
+
+            # 6. Save match block
+            match_id = f"match_{uuid.uuid4().hex[:8]}"
+            match_doc = {
+                "match_id": match_id,
+                "lead_id": lead["id"],
+                "property_ids": [property_doc["property_id"]],
+                "status": "SENT",
+                "generated_at": datetime.now(timezone.utc)
+            }
+            db["matches"].insert_one(match_doc)
+
+            # 7. Transition lead status to PROPERTIES_SENT and store last_properties_sent
+            db["leads"].update_one(
+                {"id": lead["id"]},
+                {"$set": {
+                    "status": "PROPERTIES_SENT",
+                    "last_properties_sent": [property_doc["property_id"]],
+                    "updated_at": datetime.now(timezone.utc)
+                }}
+            )
+
+            # 8. Send WhatsApp notification
+            deposit = property_doc.get("rental_details", {}).get("deposit", 0)
+            if not deposit and "rental_details" not in property_doc:
+                # If we queried a sparse property_doc, let's fetch deposit from DB
+                full_prop = db["properties"].find_one({"property_id": property_doc["property_id"]})
+                if full_prop:
+                    deposit = full_prop.get("rental_details", {}).get("deposit", 0)
+
+            reply_text = (
+                f"🎉 Good news! A new matching property has just arrived:\n\n"
+                f"*1. {property_doc.get('bhk')} BHK in {property_doc.get('area')}*\n"
+                f"Rent: ₹{property_doc.get('price')} | Deposit: ₹{deposit}\n\n"
+                f"Reply with '1' to book a site visit!"
+            )
+            
+            logger.info(f"[Reverse Match] Notifying lead {lead['id']} of new property {property_doc['property_id']} with score {composite_score}")
+            send_whatsapp_message.delay(lead["id"], reply_text)
+
+            # 9. Record conversation history entry
+            assistant_message = {
+                "role": "assistant",
+                "content": reply_text,
+                "timestamp": datetime.now(timezone.utc)
+            }
+            db["conversations"].update_one(
+                {"phone": lead["id"]},
+                {
+                    "$push": {"messages": assistant_message},
+                    "$set": {"updated_at": datetime.now(timezone.utc)}
+                },
+                upsert=True
+            )
+
+    except Exception as err:
+        logger.error(f"[Reverse Match] Error processing: {err}", exc_info=True)
+        raise
+    finally:
+        client.close()

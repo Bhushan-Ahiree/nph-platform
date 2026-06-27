@@ -3,8 +3,8 @@ from fastapi import APIRouter, Depends, Query, HTTPException, status
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 import re
-from core.database import get_db_client
-from core.security import get_current_user_role
+from shared.utils.database import get_db_client
+from shared.utils.auth_guard import get_current_user_role
 from services.property.commission_shield import shield_property
 from apps.api.schemas.property_schema_v2 import PropertyPublicResponse, PropertyInternalResponse
 from typing import List, Dict, Any, Optional, Union
@@ -87,7 +87,21 @@ async def search_properties(
         },
         {
             "$addFields": {
-                "composite_score": {"$add": ["$structural_score", "$clamped_confidence", "$broker_reliability"]}
+                "ownership_boost": {
+                    "$switch": {
+                        "branches": [
+                            {"case": {"$eq": ["$ownership_type", "owner"]}, "then": 30},
+                            {"case": {"$eq": ["$ownership_type", "verified_broker"]}, "then": 15},
+                            {"case": {"$eq": ["$broker_profile.verified", True]}, "then": 15}
+                        ],
+                        "default": 0
+                    }
+                }
+            }
+        },
+        {
+            "$addFields": {
+                "composite_score": {"$add": ["$structural_score", "$clamped_confidence", "$broker_reliability", "$ownership_boost"]}
             }
         },
         {"$sort": {"composite_score": -1}},

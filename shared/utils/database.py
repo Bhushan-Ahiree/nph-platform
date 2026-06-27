@@ -23,3 +23,11 @@ async def close_mongo_connection():
     if db.client:
         db.client.close()
         logger.info("Closed MongoDB Atlas connection.")
+
+def get_db_client():
+    """
+    Dependency helper that returns the active database namespace.
+    """
+    if db.client is None:
+        raise RuntimeError("Database client is not initialized yet.")
+    return db.client["nph_core"]

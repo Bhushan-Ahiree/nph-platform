@@ -11,3 +11,15 @@ class PipelineSummaryResponse(BaseModel):
     site_visits_paid: int
     conversion_rate_percentage: float
     total_deal_revenue: float
+
+class LeadSummaryResponse(BaseModel):
+    total_leads: int
+    hot_leads: int
+    warm_leads: int
+    cold_leads: int
+    clients: int
+    brokers: int
+    owners: int
+    instagram: int
+    whatsapp: int
+    website: int

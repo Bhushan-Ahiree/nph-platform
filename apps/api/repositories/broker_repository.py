@@ -36,7 +36,8 @@ class BrokerRepository:
                     "properties_posted": 0,
                     "verified_properties": 0,
                     "expired_properties": 0,
-                    "reliability_score": 100
+                    "reliability_score": 100,
+                    "verified": False
                 }
             },
             upsert=True,

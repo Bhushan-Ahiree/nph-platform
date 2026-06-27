@@ -5,8 +5,8 @@ from apps.api.repositories.lead_repository import LeadRepository
 from shared.utils.database import db
 from typing import List, Dict, Any, Union
 from datetime import datetime, timezone
-from core.database import get_db_client
-from core.security import get_current_user_role
+from shared.utils.database import get_db_client
+from shared.utils.auth_guard import get_current_user_role
 from apps.api.schemas.property_schema_v2 import PropertyPublicResponse, PropertyInternalResponse
 from services.property.commission_shield import shield_property
 

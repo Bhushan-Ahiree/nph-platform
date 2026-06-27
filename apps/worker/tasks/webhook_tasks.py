@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from celery import shared_task
 from pymongo import MongoClient
 from apps.worker.tasks.whatsapp_tasks import send_whatsapp_message
+from services.lead.scoring import calculate_priority_score, calculate_temperature
 
 # MongoDB Setup
 mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
@@ -22,6 +23,8 @@ def get_or_create_lead(phone_number: str) -> dict:
         lead = {
             "id": phone_number,
             "status": "DISCOVERY",
+            "lead_type": "CLIENT",       # Default — LLM can reclassify to BROKER/OWNER
+            "source": "whatsapp",        # Hardcoded for WhatsApp webhook channel
             "requirements": {
                 "city": None,
                 "area": None,
@@ -32,11 +35,37 @@ def get_or_create_lead(phone_number: str) -> dict:
                 "listing_type": None
             },
             "last_properties_sent": [],
+            "last_contacted_at": datetime.now(timezone.utc),
+            "follow_up_count": 0,
+            "priority_score": 0,
+            "lead_temperature": "COLD",
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc)
         }
         db["leads"].insert_one(lead)
     return lead
+
+def update_lead_score(lead_id: str):
+    lead = db["leads"].find_one({"id": lead_id})
+    if lead:
+        score = calculate_priority_score(lead)
+        temp = calculate_temperature(score)
+        db["leads"].update_one(
+            {"id": lead_id},
+            {"$set": {"priority_score": score, "lead_temperature": temp}}
+        )
+
+OWNER_KEYWORDS = {"owner", "direct owner", "malik", "no brokerage",
+                  "my flat", "my property", "my apartment", "malak"}
+
+def detect_owner_confidence(text: str) -> float:
+    """Returns 0.0-1.0 confidence that sender is a property owner."""
+    text_lower = text.lower()
+    for kw in OWNER_KEYWORDS:
+        if kw in text_lower:
+            return 0.8
+    return 0.0
+
 
 def extract_facts_with_ai(conversation_history: list, current_requirements: dict) -> str:
     """Uses LLM ONLY for complex intent and fact extraction over complete conversation threads."""
@@ -150,6 +179,79 @@ def process_incoming_message_event(event_id: str):
     )
     conv["messages"].append(new_message)
     
+    # Update last_contacted_at on every incoming message
+    lead["last_contacted_at"] = datetime.now(timezone.utc)
+    db["leads"].update_one({"id": lead["id"]}, {"$set": {"last_contacted_at": lead["last_contacted_at"]}})
+    update_lead_score(lead["id"])
+    
+    # Owner Detection Workflow
+    if lead.get("lead_type") != "OWNER":
+        confidence = detect_owner_confidence(text)
+        if confidence >= 0.6:
+            lead["lead_type"] = "OWNER"
+            db["leads"].update_one({"id": lead["id"]}, {"$set": {"lead_type": "OWNER"}})
+            update_lead_score(lead["id"])
+            db["operator_actions"].insert_one({
+                "action_type": "CONFIRM_OWNER",
+                "lead_id": lead["id"],
+                "owner_confidence": confidence,
+                "source_text": text,
+                "status": "PENDING",
+                "created_at": datetime.now(timezone.utc)
+            })
+            reply_text = "It sounds like you may be a property owner! Are you the owner of this property? Reply YES to confirm."
+            send_whatsapp_message.delay(sender, reply_text)
+            
+            db["leads"].update_one({"id": lead["id"]}, {"$inc": {"follow_up_count": 1}})
+            assistant_message = {
+                "role": "assistant",
+                "content": reply_text,
+                "timestamp": datetime.now(timezone.utc)
+            }
+            db["conversations"].update_one(
+                {"phone": sender},
+                {
+                    "$push": {"messages": assistant_message},
+                    "$set": {"updated_at": datetime.now(timezone.utc)}
+                }
+            )
+            return "Detected potential owner. Prompting for confirmation."
+            
+    if lead.get("lead_type") == "OWNER" and text.lower().strip() in ["yes", "haan", "ho", "y", "ha"]:
+        pending_action = db["operator_actions"].find_one({
+            "lead_id": lead["id"], 
+            "action_type": "CONFIRM_OWNER", 
+            "status": "PENDING"
+        })
+        if pending_action:
+            db["operator_actions"].update_one(
+                {"_id": pending_action["_id"]},
+                {"$set": {"status": "COMPLETED"}}
+            )
+            db["operator_actions"].insert_one({
+                "action_type": "CONVERT_OWNER_TO_INVENTORY",
+                "lead_id": lead["id"],
+                "status": "PENDING",
+                "created_at": datetime.now(timezone.utc)
+            })
+            reply_text = "Thank you! Our team will contact you shortly to list your property."
+            send_whatsapp_message.delay(sender, reply_text)
+            
+            db["leads"].update_one({"id": lead["id"]}, {"$inc": {"follow_up_count": 1}})
+            assistant_message = {
+                "role": "assistant",
+                "content": reply_text,
+                "timestamp": datetime.now(timezone.utc)
+            }
+            db["conversations"].update_one(
+                {"phone": sender},
+                {
+                    "$push": {"messages": assistant_message},
+                    "$set": {"updated_at": datetime.now(timezone.utc)}
+                }
+            )
+            return "Confirmed owner."
+    
     status = lead.get("status", "DISCOVERY")
 
     # ==========================================
@@ -164,6 +266,7 @@ def process_incoming_message_event(event_id: str):
             print(reply_text)
             send_whatsapp_message.delay(sender, reply_text)
             
+            db["leads"].update_one({"id": lead["id"]}, {"$inc": {"follow_up_count": 1}})
             # Append assistant message to thread
             assistant_message = {
                 "role": "assistant",
@@ -208,11 +311,13 @@ def process_incoming_message_event(event_id: str):
                 {"id": lead["id"]}, 
                 {"$set": {"status": "VISIT_REQUESTED", "updated_at": datetime.now(timezone.utc)}}
             )
+            update_lead_score(lead["id"])
             reply_text = f"Great! I have logged a site visit request for {visits_created} propert(ies). Our ground team will call you shortly to schedule the exact time!"
             print(f"=== OUTBOUND TO {sender} ===")
             print(reply_text)
             send_whatsapp_message.delay(sender, reply_text)
             
+            db["leads"].update_one({"id": lead["id"]}, {"$inc": {"follow_up_count": 1}})
             assistant_message = {
                 "role": "assistant",
                 "content": reply_text,
@@ -232,6 +337,7 @@ def process_incoming_message_event(event_id: str):
             print(reply_text)
             send_whatsapp_message.delay(sender, reply_text)
             
+            db["leads"].update_one({"id": lead["id"]}, {"$inc": {"follow_up_count": 1}})
             assistant_message = {
                 "role": "assistant",
                 "content": reply_text,
@@ -286,12 +392,14 @@ def process_incoming_message_event(event_id: str):
         {"id": lead["id"]},
         {"$set": {"requirements": lead["requirements"], "status": lead["status"], "updated_at": lead["updated_at"]}}
     )
+    update_lead_score(lead["id"])
 
     if lead["status"] != "MATCHABLE":
         print(f"=== OUTBOUND TO {sender} ===")
         print(reply_text)
         send_whatsapp_message.delay(sender, reply_text)
         
+        db["leads"].update_one({"id": lead["id"]}, {"$inc": {"follow_up_count": 1}})
         assistant_message = {
             "role": "assistant",
             "content": reply_text,
@@ -359,6 +467,7 @@ def process_incoming_message_event(event_id: str):
                         "updated_at": datetime.now(timezone.utc)
                     }}
                 )
+                update_lead_score(lead["id"])
                 
                 recommendations = []
                 recommendation_text = ""
@@ -376,10 +485,12 @@ def process_incoming_message_event(event_id: str):
                 reply_text = recommendation_text + "Reply with the option number (e.g. 1 or 2) to book a site visit!"
                 print(reply_text)
                 send_whatsapp_message.delay(sender, reply_text)
+                db["leads"].update_one({"id": lead["id"]}, {"$inc": {"follow_up_count": 1}})
             else:
                 reply_text = "I have all your requirements, but currently no active properties match. I'll notify you when one arrives."
                 print(reply_text)
                 send_whatsapp_message.delay(sender, reply_text)
+                db["leads"].update_one({"id": lead["id"]}, {"$inc": {"follow_up_count": 1}})
                 
             assistant_message = {
                 "role": "assistant",
