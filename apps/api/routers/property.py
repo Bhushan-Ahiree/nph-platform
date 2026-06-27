@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from celery import Celery
 from pydantic import BaseModel
 
-from shared.schemas.property import PropertyCreate, PropertyDB
+from apps.api.schemas.property_schema_v2 import PropertyCreate, PropertyDB
 from shared.utils.auth_guard import get_current_user
 from apps.api.repositories.property_repository import property_repo
 from apps.api.schemas.raw_ingestion_schemas import RawChunkIngestionRequest, RawChunkIngestionResponse

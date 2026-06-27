@@ -79,7 +79,7 @@ class TestPropertySchemas:
     """Validates shared/schemas/property.py models."""
 
     def test_property_create_valid(self):
-        from shared.schemas.property import PropertyCreate
+        from apps.api.schemas.property_schema_v2 import PropertyCreate
         prop = PropertyCreate(
             title="2 BHK Apartment in Indira Nagar",
             area="Indira Nagar",
@@ -93,7 +93,7 @@ class TestPropertySchemas:
         assert prop.parking is False
 
     def test_property_create_defaults(self):
-        from shared.schemas.property import PropertyCreate
+        from apps.api.schemas.property_schema_v2 import PropertyCreate
         prop = PropertyCreate(title="Test", area="Test Area", price=10000)
         assert prop.source.type == "broker_group"
         assert prop.availability.status == "active"
@@ -103,32 +103,32 @@ class TestPropertySchemas:
         assert prop.intelligence.source_confidence == 100
 
     def test_property_source_defaults(self):
-        from shared.schemas.property import PropertySource
+        from apps.api.schemas.property_schema_v2 import PropertySource
         source = PropertySource()
         assert source.type == "broker_group"
         assert source.group_name is None
         assert source.broker_name is None
 
     def test_property_availability_defaults(self):
-        from shared.schemas.property import PropertyAvailability
+        from apps.api.schemas.property_schema_v2 import PropertyAvailability
         avail = PropertyAvailability()
         assert avail.status == "active"
         assert avail.verified_by == "automated"
 
     def test_property_rental_details_defaults(self):
-        from shared.schemas.property import PropertyRentalDetails
+        from apps.api.schemas.property_schema_v2 import PropertyRentalDetails
         rental = PropertyRentalDetails()
         assert rental.deposit == 0
         assert rental.preferred_tenant == "any"
         assert rental.furnishing == "unfurnished"
 
     def test_property_create_missing_required_field(self):
-        from shared.schemas.property import PropertyCreate
+        from apps.api.schemas.property_schema_v2 import PropertyCreate
         with pytest.raises(ValidationError):
             PropertyCreate(title="Test", area="Test Area")  # missing price
 
     def test_property_legacy_compatibility(self):
-        from shared.schemas.property import PropertyDB
+        from apps.api.schemas.property_schema_v2 import PropertyDB
         from datetime import datetime
         legacy_data = {
             "_id": "6a10781883d1ddbe5fa40011",

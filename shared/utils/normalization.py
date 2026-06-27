@@ -48,6 +48,21 @@ def compute_ingestion_hash(
     return hashlib.sha256(composite.encode("utf-8")).hexdigest()
 
 
+def clean_phone(value: Any) -> Optional[str]:
+    """Cleans a phone number to standard 10-digit format, handling country codes."""
+    if value is None:
+        return None
+    digits = re.sub(r"\D", "", str(value))
+    # Accept 10-digit Indian numbers or 12-digit with country code
+    if len(digits) == 12 and digits.startswith("91"):
+        digits = digits[2:]
+    if len(digits) == 10:
+        return digits
+    # Return as-is if it doesn't match standard length; better than losing data
+    return digits if digits else None
+
+
+
 def normalise_extracted_property(
     raw: Dict[str, Any],
     source_group: str,
@@ -78,18 +93,6 @@ def normalise_extracted_property(
         if value is None:
             return default
         return str(value).strip()
-
-    def clean_phone(value: Any) -> Optional[str]:
-        if value is None:
-            return None
-        digits = re.sub(r"\D", "", str(value))
-        # Accept 10-digit Indian numbers or 12-digit with country code
-        if len(digits) == 12 and digits.startswith("91"):
-            digits = digits[2:]
-        if len(digits) == 10:
-            return digits
-        # Return as-is if it doesn't match standard length; better than losing data
-        return digits if digits else None
 
     # Validate and normalise enumerated string fields
     valid_property_types = {"apartment", "villa", "plot", "commercial", "flat", "land"}

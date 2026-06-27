@@ -22,6 +22,7 @@ from typing import List, Dict, Any, Optional
 
 from celery import shared_task
 from pymongo import MongoClient
+from shared.utils.normalization import clean_phone
 
 logger = logging.getLogger(__name__)
 
@@ -428,9 +429,7 @@ def process_raw_group_dump(self, source_group: str, raw_text: str, event_id: str
                     # ── Sprint A: append source entry instead of silent drop ─
                     # Push the new broker/group observation onto the sources array
                     # so forwarding intelligence is preserved analytically.
-                    clean_phone_for_source = re.sub(r"\D", "", str(broker_phone)) if broker_phone else None
-                    if clean_phone_for_source and len(clean_phone_for_source) == 12 and clean_phone_for_source.startswith("91"):
-                        clean_phone_for_source = clean_phone_for_source[2:]
+                    clean_phone_for_source = clean_phone(broker_phone)
                     properties_col.update_one(
                         {"ingestion_hash": ingestion_hash, "status": "ACTIVE"},
                         {
@@ -453,17 +452,15 @@ def process_raw_group_dump(self, source_group: str, raw_text: str, event_id: str
 
                 # ── Step 4: Broker upsert ──────────────────────────────────
                 if broker_phone:
-                    # Clean phone number to digits only
-                    clean_phone = re.sub(r"\D", "", str(broker_phone))
-                    if len(clean_phone) == 12 and clean_phone.startswith("91"):
-                        clean_phone = clean_phone[2:]
+                    # Normalize phone using the canonical shared utility
+                    _clean = clean_phone(broker_phone)
 
-                    if clean_phone:
+                    if _clean:
                         broker_profiles_col.update_one(
-                            {"_id": clean_phone},
+                            {"_id": _clean},
                             {
                                 "$set": {
-                                    "phone": clean_phone,
+                                    "phone": _clean,
                                     "name": "NPH Ingestion Bot",
                                     "last_seen_at": datetime.now(timezone.utc)
                                 },
@@ -479,14 +476,14 @@ def process_raw_group_dump(self, source_group: str, raw_text: str, event_id: str
                         )
                         # Increment the posted counter for this broker
                         broker_profiles_col.update_one(
-                            {"_id": clean_phone},
+                            {"_id": _clean},
                             {
                                 "$inc": {"properties_posted": 1},
                                 "$set": {"last_seen_at": datetime.now(timezone.utc)}
                             }
                         )
                         logger.info(
-                            f"[Ingestion Task] [{task_id}] Broker '{clean_phone}' "
+                            f"[Ingestion Task] [{task_id}] Broker '{_clean}' "
                             f"ledger upserted successfully."
                         )
 

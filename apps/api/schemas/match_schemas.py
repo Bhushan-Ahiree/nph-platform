@@ -18,7 +18,7 @@ class MatchResponse(BaseModel):
     id: str = Field(alias="match_id")
     lead_id: str
     property_ids: List[str]
-    status: str
+    status: Literal["SENT", "VIEWED", "ARCHIVED"]
     generated_at: datetime
 
     model_config = {"populate_by_name": True}

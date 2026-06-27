@@ -17,3 +17,6 @@ __pycache__/
 Thumbs.db
 
 dump.txt
+
+# AI Knowledge Base (local only)
+AI_CONTEXT/

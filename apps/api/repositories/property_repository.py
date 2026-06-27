@@ -1,12 +1,12 @@
 # apps/api/repositories/property_repository.py
-import re
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
+import re
 from pymongo import ReturnDocument
 
 
-from shared.utils.normalization import compute_ingestion_hash
+from shared.utils.normalization import compute_ingestion_hash, clean_phone
 
 class PropertyRepository:
     """Isolates all structural database execution logic for inventory intelligence."""
@@ -83,13 +83,7 @@ class PropertyRepository:
             if isinstance(source, dict):
                 broker_phone = source.get("broker_phone")
         
-        clean_phone = None
-        if broker_phone:
-            clean_phone = re.sub(r"\D", "", str(broker_phone))
-            if len(clean_phone) == 12 and clean_phone.startswith("91"):
-                clean_phone = clean_phone[2:]
-            if len(clean_phone) != 10:
-                clean_phone = clean_phone if clean_phone else None
+        clean_phone_val = clean_phone(broker_phone)
 
         # Determine ingestion hash
         ingestion_hash = property_data.get("ingestion_hash")
@@ -99,7 +93,7 @@ class PropertyRepository:
                 area=property_data.get("area", ""),
                 bhk=property_data.get("bhk", 0),
                 listing_type=property_data.get("listing_type", "rent"),
-                broker_phone=clean_phone
+                broker_phone=clean_phone_val
             )
             property_data["ingestion_hash"] = ingestion_hash
 
@@ -118,7 +112,7 @@ class PropertyRepository:
             # Collision found — run collision workflow (append broker to sources array)
             result = await self.append_source_entry(
                 ingestion_hash=ingestion_hash,
-                broker_phone=clean_phone,
+                broker_phone=clean_phone_val,
                 group_name=group_name
             )
             return result
@@ -143,7 +137,7 @@ class PropertyRepository:
         # Initialize sources array
         if "sources" not in property_data or not property_data["sources"]:
             property_data["sources"] = [{
-                "broker_phone": clean_phone,
+                "broker_phone": clean_phone_val,
                 "group_name": group_name,
                 "seen_at": datetime.now(timezone.utc)
             }]
@@ -163,9 +157,9 @@ class PropertyRepository:
         if "_id" in property_data:
             property_data["_id"] = str(property_data["_id"])
 
-        if clean_phone:
+        if clean_phone_val:
             from apps.api.repositories.broker_repository import broker_repo
-            await broker_repo.increment_property_counter(clean_phone, "properties_posted")
+            await broker_repo.increment_property_counter(clean_phone_val, "properties_posted")
 
         return property_data
 

@@ -1,7 +1,7 @@
 # apps/api/schemas/lead_schemas.py
 from enum import Enum
 from pydantic import BaseModel, Field, EmailStr, model_validator
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Literal
 from datetime import datetime, timezone
 
 
@@ -38,13 +38,13 @@ class LeadSource(str, Enum):
 
 
 class LeadRequirements(BaseModel):
-    city: Optional[str] = None
+    city: Optional[Literal["Nashik", "Pune", "Mumbai"]] = None
     area: Optional[str] = None
     bhk: Optional[int] = None
     min_price: Optional[float] = None
     max_price: Optional[float] = None
     property_type: Optional[str] = None
-    listing_type: Optional[str] = None
+    listing_type: Optional[Literal["rent", "buy", "sale"]] = None
 
 
 class LeadCreate(BaseModel):

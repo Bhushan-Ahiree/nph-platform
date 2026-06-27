@@ -165,8 +165,8 @@ class TestSprintASchemaDefaults:
         assert entry.seen_at == now
 
     def test_shared_schema_normalises_legacy_verified_to_uppercase(self):
-        from shared.schemas.property import PropertyBase
-        prop = PropertyBase(
+        from apps.api.schemas.property_schema_v2 import PropertySchemaV2
+        prop = PropertySchemaV2(
             title="Legacy Property",
             city="Nashik",
             area="Test Area",
@@ -176,8 +176,8 @@ class TestSprintASchemaDefaults:
         assert prop.availability_status == "VERIFIED"
 
     def test_shared_schema_normalises_legacy_stale_to_uppercase(self):
-        from shared.schemas.property import PropertyBase
-        prop = PropertyBase(
+        from apps.api.schemas.property_schema_v2 import PropertySchemaV2
+        prop = PropertySchemaV2(
             title="Stale Property",
             city="Nashik",
             area="Test Area",
@@ -187,8 +187,8 @@ class TestSprintASchemaDefaults:
         assert prop.availability_status == "STALE"
 
     def test_shared_schema_preserves_canonical_verified(self):
-        from shared.schemas.property import PropertyBase
-        prop = PropertyBase(
+        from apps.api.schemas.property_schema_v2 import PropertySchemaV2
+        prop = PropertySchemaV2(
             title="Canonical Property",
             city="Nashik",
             area="Test Area",
@@ -198,8 +198,8 @@ class TestSprintASchemaDefaults:
         assert prop.availability_status == "VERIFIED"
 
     def test_shared_schema_empty_availability_defaults_to_new(self):
-        from shared.schemas.property import PropertyBase
-        prop = PropertyBase(
+        from apps.api.schemas.property_schema_v2 import PropertySchemaV2
+        prop = PropertySchemaV2(
             title="Empty Avail Property",
             city="Nashik",
             area="Test Area",
@@ -208,8 +208,8 @@ class TestSprintASchemaDefaults:
         assert prop.availability_status == "NEW"
 
     def test_shared_schema_sources_initialised_as_empty_list(self):
-        from shared.schemas.property import PropertyBase
-        prop = PropertyBase(
+        from apps.api.schemas.property_schema_v2 import PropertySchemaV2
+        prop = PropertySchemaV2(
             title="No Sources Property",
             city="Nashik",
             area="Test Area",
@@ -218,8 +218,8 @@ class TestSprintASchemaDefaults:
         assert prop.sources == []
 
     def test_shared_schema_extraction_confidence_initialised(self):
-        from shared.schemas.property import PropertyBase
-        prop = PropertyBase(
+        from apps.api.schemas.property_schema_v2 import PropertySchemaV2
+        prop = PropertySchemaV2(
             title="Extraction Test",
             city="Nashik",
             area="Test Area",
