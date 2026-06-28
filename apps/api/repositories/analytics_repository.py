@@ -23,7 +23,7 @@ class AnalyticsRepository:
 
     async def calculate_and_update_hotness(self, lead_id: str) -> int:
         """Computes the core operational business priority rating for a target user profile."""
-        lead = await self.leads_col.find_one({"lead_id": lead_id})
+        lead = await self.leads_col.find_one({"id": lead_id})
         if not lead:
             return 0
 
@@ -48,7 +48,7 @@ class AnalyticsRepository:
 
         # Commit score directly back into your cloud document base
         await self.leads_col.update_one(
-            {"lead_id": lead_id},
+            {"id": lead_id},
             {"$set": {"hotness_score": final_score}}
         )
         return final_score

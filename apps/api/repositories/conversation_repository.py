@@ -2,6 +2,7 @@
 from apps.api.schemas.conversation_schemas import ConversationAppend, MessageBlock
 from datetime import datetime, timezone
 from typing import Optional
+from shared.utils.normalization import clean_phone
 
 
 class ConversationRepository:
@@ -19,9 +20,16 @@ class ConversationRepository:
         """Builds composite tracking indexes for immediate conversational history retrieval."""
         await self.collection.create_index("lead_id")
         await self.collection.create_index("phone")
+        await self.collection.create_index("updated_at")
 
     async def append_message_to_history(self, lead_id: str, phone: str, message: ConversationAppend) -> dict:
         """Atomically pushes a new chat message into the lead's log array or initializes it if empty."""
+        cleaned = clean_phone(phone)
+        if cleaned and phone.startswith("+91") and not cleaned.startswith("+91"):
+            phone = f"+91{cleaned}"
+        elif cleaned:
+            phone = cleaned
+
         new_message = MessageBlock(
             role=message.role,
             content=message.content,

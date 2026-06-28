@@ -48,6 +48,16 @@ async def lifespan(app: FastAPI):
         await site_visit_repo.create_indexes()
         from apps.api.repositories.broker_repository import broker_repo
         await broker_repo.create_indexes()
+        from apps.api.repositories.property_repository import property_repo
+        await property_repo.create_indexes()
+        from apps.api.repositories.recommendation_repository import recommendation_repo
+        await recommendation_repo.create_indexes()
+        from apps.api.repositories.user_repository import user_repo
+        await user_repo.create_indexes()
+        from apps.api.repositories.raw_message_repository import raw_message_repo
+        await raw_message_repo.create_indexes()
+        from apps.api.repositories.knowledge_graph_repository import knowledge_graph_repo
+        await knowledge_graph_repo.create_indexes()
 
         print("[Lifespan Startup] Index verification complete. Database optimization rules active.")
     except Exception as e:

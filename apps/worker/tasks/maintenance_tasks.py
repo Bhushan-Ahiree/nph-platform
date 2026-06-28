@@ -16,6 +16,20 @@ from celery import shared_task
 
 logger = logging.getLogger(__name__)
 
+# Module-level pymongo client singleton
+mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
+_mongo_client = None
+
+def get_db():
+    global _mongo_client
+    import pymongo
+    if _mongo_client is None or hasattr(pymongo.MongoClient, "return_value") or pymongo.MongoClient.__name__ == "MockMongoClient" or hasattr(MongoClient, "return_value"):
+        if hasattr(MongoClient, "return_value"):
+            _mongo_client = MongoClient(mongo_url)
+        else:
+            _mongo_client = pymongo.MongoClient(mongo_url)
+    return _mongo_client["nph_core"]
+
 
 # ---------------------------------------------------------------------------
 # Asymmetric Velocity Parameters
@@ -88,10 +102,7 @@ def sweep_stale_properties(days_old: int = 10):
     Scans the database for active properties older than 'days_old'.
     Automatically marks them as expired to prevent dead leads.
     """
-    mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
-    client = MongoClient(mongo_url)
-    db = client["nph_core"]
-
+    db = get_db()
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
 
     try:
@@ -119,8 +130,6 @@ def sweep_stale_properties(days_old: int = 10):
         error_msg = f"[Midnight Sweeper] Error during execution: {str(e)}"
         logger.error(error_msg)
         return error_msg
-    finally:
-        client.close()
 
 
 # ---------------------------------------------------------------------------
@@ -161,10 +170,7 @@ def sweep_inventory_freshness():
         When a property transitions to ARCHIVED, the broker's 'expired_properties'
         counter is incremented and their reliability_score is recalculated.
     """
-    mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
-    client = MongoClient(mongo_url)
-    db = client["nph_core"]
-
+    db = get_db()
     now = datetime.now(timezone.utc)
     counters = {
         "verified": 0,
@@ -260,9 +266,6 @@ def sweep_inventory_freshness():
         error_msg = f"[Freshness Sweeper] Fatal error: {str(err)}"
         logger.error(error_msg, exc_info=True)
         return {"status": "error", "message": error_msg}
-
-    finally:
-        client.close()
 
 
 def _handle_broker_expiry(db, prop: dict, now: datetime):

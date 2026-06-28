@@ -18,9 +18,36 @@ class PropertyRepository:
             raise RuntimeError("Database client is not initialized yet.")
         return db.client.nph_core.properties
 
+    async def create_indexes(self):
+        """Builds background indexing models for inventory queries and deduplication."""
+        collection = self.get_collection()
+        await collection.create_index([("ingestion_hash", 1), ("status", 1)], unique=True)
+        await collection.create_index([("status", 1), ("availability_status", 1), ("listing_type", 1), ("area", 1), ("bhk", 1)])
+        await collection.create_index([("property_id", 1)], unique=True)
+        await collection.create_index([("status", 1), ("last_verified_at", 1)])
+        await collection.create_index([("broker_phone", 1), ("status", 1)])
+        await collection.create_index([("updated_at", -1)])
+
     async def create(self, property_data: Dict[str, Any]) -> Dict[str, Any]:
         """Inserts a new property document into the collection and returns it with a serialized _id."""
         collection = self.get_collection()
+
+        # Ensure ingestion_hash is populated to prevent E11000 duplicate key errors on (ingestion_hash, status)
+        if not property_data.get("ingestion_hash"):
+            broker_phone = property_data.get("broker_phone")
+            if not broker_phone:
+                source = property_data.get("source")
+                if isinstance(source, dict):
+                    broker_phone = source.get("broker_phone")
+            clean_phone_val = clean_phone(broker_phone)
+            property_data["ingestion_hash"] = compute_ingestion_hash(
+                price=property_data.get("price", 0),
+                area=property_data.get("area", ""),
+                bhk=property_data.get("bhk", 0),
+                listing_type=property_data.get("listing_type", "rent"),
+                broker_phone=clean_phone_val
+            )
+
         await collection.insert_one(property_data)
         if "_id" in property_data:
             property_data["_id"] = str(property_data["_id"])
@@ -97,27 +124,23 @@ class PropertyRepository:
             )
             property_data["ingestion_hash"] = ingestion_hash
 
-        # Check for duplication on ACTIVE hash collision
-        existing = await collection.find_one({
-            "ingestion_hash": ingestion_hash,
-            "status": "ACTIVE"
-        })
-
         group_name = None
         source = property_data.get("source")
         if isinstance(source, dict):
             group_name = source.get("group_name")
 
+        # Atomic update attempt first: try to append source entry to an existing ACTIVE property
+        # If it exists, find_one_and_update atomically modifies it and returns the updated document.
+        # This completely eliminates the check-then-act race condition under concurrent Celery workers.
+        existing = await self.append_source_entry(
+            ingestion_hash=ingestion_hash,
+            broker_phone=clean_phone_val,
+            group_name=group_name
+        )
         if existing:
-            # Collision found — run collision workflow (append broker to sources array)
-            result = await self.append_source_entry(
-                ingestion_hash=ingestion_hash,
-                broker_phone=clean_phone_val,
-                group_name=group_name
-            )
-            return result
+            return existing
 
-        # No collision — proceed to insert a new property document
+        # No collision detected — proceed to prepare a new property document for insertion
         if "property_id" not in property_data:
             property_data["property_id"] = f"prop_{uuid.uuid4().hex[:8]}"
 
@@ -152,7 +175,19 @@ class PropertyRepository:
             if isinstance(property_data["intelligence"], dict):
                 property_data["intelligence"]["duplicate_count"] = 0
 
-        await collection.insert_one(property_data)
+        try:
+            await collection.insert_one(property_data)
+        except Exception:
+            # Race condition fallback: another worker beat us to the insert by a millisecond.
+            # Catch duplicate key exception and atomically append source entry.
+            existing_fallback = await self.append_source_entry(
+                ingestion_hash=ingestion_hash,
+                broker_phone=clean_phone_val,
+                group_name=group_name
+            )
+            if existing_fallback:
+                return existing_fallback
+            raise
 
         if "_id" in property_data:
             property_data["_id"] = str(property_data["_id"])

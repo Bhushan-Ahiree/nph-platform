@@ -14,6 +14,10 @@ class UserRepository:
             raise RuntimeError("Database client is not initialized yet.")
         return db.client.nph_core.users
 
+    async def create_indexes(self):
+        """Builds unique indexing models for user authentication queries."""
+        await self.collection.create_index("email", unique=True, sparse=True)
+
     async def get_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         return await self.collection.find_one({"email": email})
 

@@ -14,6 +14,13 @@ class RecommendationRepository:
             raise RuntimeError("Database client is not initialized yet.")
         return db.client.nph_core.recommendation_events
 
+    async def create_indexes(self):
+        """Builds indexing models for recommendation analytics and conversion funnel queries."""
+        await self.collection.create_index("lead_id")
+        await self.collection.create_index("property_id")
+        await self.collection.create_index("event")
+        await self.collection.create_index("created_at")
+
     async def insert_recommendation_event(self, lead_id: str, property_id: str, event: str, match_score: int) -> dict:
         """Writes a new recommendation lifecycle event to the database."""
         payload = {

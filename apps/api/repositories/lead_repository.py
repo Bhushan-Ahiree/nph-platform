@@ -2,6 +2,7 @@
 from apps.api.schemas.lead_schemas import LeadCreate, LeadUpdate
 from datetime import datetime, timezone
 from typing import Optional, List
+from shared.utils.normalization import clean_phone
 
 
 class LeadRepository:
@@ -16,14 +17,25 @@ class LeadRepository:
         return db.client.nph_core.leads
 
     async def create_indexes(self):
-        """Builds background indexing models for lightning-fast search routing."""
+        """Builds background indexing models for lightning-fast search routing and analytics."""
         await self.collection.create_index("id", unique=True, sparse=True)
         await self.collection.create_index("status")
         await self.collection.create_index("created_at")
+        await self.collection.create_index("hotness_score")
+        await self.collection.create_index("site_visit_booked")
+        await self.collection.create_index("site_visit_paid")
+        await self.collection.create_index("deal_closed")
 
     async def insert_lead(self, lead_data: LeadCreate) -> dict:
         """Standardizes structural payload shapes and updates the Atlas collection."""
         payload = lead_data.model_dump()
+        if payload.get("phone"):
+            cleaned = clean_phone(payload["phone"])
+            if cleaned and payload["phone"].startswith("+91") and not cleaned.startswith("+91"):
+                payload["phone"] = f"+91{cleaned}"
+            elif cleaned:
+                payload["phone"] = cleaned
+            
         payload["created_at"] = datetime.now(timezone.utc)
         payload["updated_at"] = datetime.now(timezone.utc)
 

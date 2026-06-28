@@ -18,6 +18,8 @@ class SiteVisitRepository:
 
     async def create_indexes(self):
         """Indexes to make our analytics dashboards instantly fast."""
+        await self.collection.create_index([("status", 1), ("scheduled_at", 1)])
+        await self.collection.create_index([("lead_id", 1), ("created_at", -1)])
         await self.collection.create_index("lead_id")
         await self.collection.create_index("status")
         await self.collection.create_index("scheduled_at")

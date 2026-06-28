@@ -18,6 +18,8 @@ class MatchRepository:
 
     async def create_indexes(self):
         """Builds background indexing models for lead queries."""
+        await self.collection.create_index([("lead_id", 1), ("generated_at", -1)])
+        await self.collection.create_index("match_id", unique=True)
         await self.collection.create_index("lead_id")
         await self.collection.create_index("generated_at")
 

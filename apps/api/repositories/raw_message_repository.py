@@ -36,10 +36,12 @@ class RawMessageRepository:
           - ingestion_hash: For fast dedup lookups linking back from property docs.
           - processed: For sweeper tasks that scan un-processed log entries.
           - received_at: For time-range analytics queries.
+          - log_id: Unique index for fast log marking and retrieval.
         """
         await self.collection.create_index("ingestion_hash")
         await self.collection.create_index("processed")
         await self.collection.create_index([("received_at", -1)])
+        await self.collection.create_index("log_id", unique=True)
 
     async def insert_raw_log(
         self,

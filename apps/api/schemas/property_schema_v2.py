@@ -130,6 +130,29 @@ class PropertySchemaV2(BaseModel):
 
     raw_message: Optional[str] = None
 
+    # ── Sprint G: Canonical & Entity Intelligence ───────────────────────────
+    locality: Optional[str] = None
+    raw_locality: Optional[str] = None
+    canonical_locality: Optional[str] = None
+    builder_name: Optional[str] = None
+    project_name: Optional[str] = None
+    landmark: Optional[str] = None
+    landmarks: List[str] = Field(default_factory=list)
+    amenities: List[str] = Field(default_factory=list)
+    possession_status: Optional[str] = None
+    furnishing_status: Optional[str] = None
+    poster_type: Optional[str] = None
+    listing_quality_score: int = Field(default=100, ge=0, le=100)
+    missing_fields: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    confidence_breakdown: Dict[str, Any] = Field(default_factory=dict)
+
+    # ── Sprint H: Knowledge Graph Foreign Keys ──────────────────────────────
+    locality_id: Optional[str] = None
+    builder_id: Optional[str] = None
+    project_id: Optional[str] = None
+    amenity_ids: List[str] = Field(default_factory=list)
+
     # ── Core status fields ───────────────────────────────────────────────────
     # 'status' is the coarse 3-state operational bucket (ACTIVE / UNVERIFIED / ARCHIVED).
     status: Literal["ACTIVE", "UNVERIFIED", "ARCHIVED"] = "ACTIVE"
@@ -280,6 +303,30 @@ class PropertySchemaV2(BaseModel):
             if "extraction_confidence" not in data:
                 data["extraction_confidence"] = 100
 
+            # Sprint G defaults
+            if "landmarks" not in data:
+                data["landmarks"] = []
+            if "amenities" not in data:
+                data["amenities"] = []
+            if "missing_fields" not in data:
+                data["missing_fields"] = []
+            if "warnings" not in data:
+                data["warnings"] = []
+            if "confidence_breakdown" not in data:
+                data["confidence_breakdown"] = {}
+            if "listing_quality_score" not in data:
+                data["listing_quality_score"] = 100
+
+            # Sprint H defaults
+            if "amenity_ids" not in data:
+                data["amenity_ids"] = []
+            if "locality_id" not in data:
+                data["locality_id"] = None
+            if "builder_id" not in data:
+                data["builder_id"] = None
+            if "project_id" not in data:
+                data["project_id"] = None
+
             # Map broker_phone from source if present and not set
             if "broker_phone" not in data or not data["broker_phone"]:
                 source = data.get("source")
@@ -317,6 +364,28 @@ class PropertyPublicResponse(BaseModel):
     cover_image: Optional[str] = "https://nph-platform.s3.ap-south-1.amazonaws.com/assets/default-cover.jpg"
     match_reason: List[str] = Field(default_factory=list)
     
+    # Sprint G fields
+    locality: Optional[str] = None
+    raw_locality: Optional[str] = None
+    canonical_locality: Optional[str] = None
+    builder_name: Optional[str] = None
+    project_name: Optional[str] = None
+    landmark: Optional[str] = None
+    landmarks: List[str] = Field(default_factory=list)
+    possession_status: Optional[str] = None
+    furnishing_status: Optional[str] = None
+    poster_type: Optional[str] = None
+    listing_quality_score: int = 100
+    missing_fields: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    confidence_breakdown: Dict[str, Any] = Field(default_factory=dict)
+
+    # Sprint H fields
+    locality_id: Optional[str] = None
+    builder_id: Optional[str] = None
+    project_id: Optional[str] = None
+    amenity_ids: List[str] = Field(default_factory=list)
+
     # Shielded fields displaying standardized obfuscation masks
     building_name: str = "Hidden until site visit confirmation"
     exact_address: str = "Hidden until site visit confirmation"
@@ -351,6 +420,26 @@ class PropertyPublicResponse(BaseModel):
                 data["property_type"] = "apartment"
             if "listing_type" not in data:
                 data["listing_type"] = "rent"
+            if "amenities" not in data:
+                data["amenities"] = []
+            if "landmarks" not in data:
+                data["landmarks"] = []
+            if "missing_fields" not in data:
+                data["missing_fields"] = []
+            if "warnings" not in data:
+                data["warnings"] = []
+            if "confidence_breakdown" not in data:
+                data["confidence_breakdown"] = {}
+            if "listing_quality_score" not in data:
+                data["listing_quality_score"] = 100
+            if "amenity_ids" not in data:
+                data["amenity_ids"] = []
+            if "locality_id" not in data:
+                data["locality_id"] = None
+            if "builder_id" not in data:
+                data["builder_id"] = None
+            if "project_id" not in data:
+                data["project_id"] = None
                 
             # Enforce hard-coded public security boundaries
             data["building_name"] = "Hidden until site visit confirmation"
@@ -385,6 +474,28 @@ class PropertyInternalResponse(BaseModel):
     updated_at: datetime
     match_reason: List[str] = Field(default_factory=list)
 
+    # Sprint G fields
+    locality: Optional[str] = None
+    raw_locality: Optional[str] = None
+    canonical_locality: Optional[str] = None
+    builder_name: Optional[str] = None
+    project_name: Optional[str] = None
+    landmark: Optional[str] = None
+    landmarks: List[str] = Field(default_factory=list)
+    possession_status: Optional[str] = None
+    furnishing_status: Optional[str] = None
+    poster_type: Optional[str] = None
+    listing_quality_score: int = 100
+    missing_fields: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    confidence_breakdown: Dict[str, Any] = Field(default_factory=dict)
+
+    # Sprint H fields
+    locality_id: Optional[str] = None
+    builder_id: Optional[str] = None
+    project_id: Optional[str] = None
+    amenity_ids: List[str] = Field(default_factory=list)
+
     @model_validator(mode="before")
     @classmethod
     def populate_ids(cls, data: Any) -> Any:
@@ -407,6 +518,24 @@ class PropertyInternalResponse(BaseModel):
                 data["listing_type"] = "rent"
             if "amenities" not in data:
                 data["amenities"] = []
+            if "landmarks" not in data:
+                data["landmarks"] = []
+            if "missing_fields" not in data:
+                data["missing_fields"] = []
+            if "warnings" not in data:
+                data["warnings"] = []
+            if "confidence_breakdown" not in data:
+                data["confidence_breakdown"] = {}
+            if "listing_quality_score" not in data:
+                data["listing_quality_score"] = 100
+            if "amenity_ids" not in data:
+                data["amenity_ids"] = []
+            if "locality_id" not in data:
+                data["locality_id"] = None
+            if "builder_id" not in data:
+                data["builder_id"] = None
+            if "project_id" not in data:
+                data["project_id"] = None
             if "status" not in data:
                 data["status"] = "ACTIVE"
             if "created_at" not in data:
