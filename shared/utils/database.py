@@ -17,12 +17,12 @@ async def connect_to_mongo():
         return
     
     db.client = AsyncIOMotorClient(mongo_uri)
-    logger.info("Successfully connected to MongoDB Atlas.")
+    logger.info("Successfully connected to MongoDB.")
 
 async def close_mongo_connection():
     if db.client:
         db.client.close()
-        logger.info("Closed MongoDB Atlas connection.")
+        logger.info("Closed MongoDB connection.")
 
 def get_db_client():
     """

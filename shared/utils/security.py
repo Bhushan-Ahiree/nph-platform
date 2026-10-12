@@ -1,7 +1,7 @@
 # shared/utils/security.py
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from typing import Optional
 from passlib.context import CryptContext
 import jwt
 

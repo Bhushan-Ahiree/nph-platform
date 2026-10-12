@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Tuple
 from shared.utils.deterministic_parser import CategoryAExtractor
 
 # --- CONFIGURATION CONSTANTS ---
@@ -136,7 +136,6 @@ def validate_listing(doc: Dict[str, Any]) -> ValidationResult:
     penalties = []
     
     ptype = str(doc.get("property_type", "")).lower()
-    ltype = str(doc.get("listing_type", "")).lower()
     bhk = doc.get("bhk", 0)
     
     if ptype in ("apartment", "flat", "villa", "house", "builder_floor"):

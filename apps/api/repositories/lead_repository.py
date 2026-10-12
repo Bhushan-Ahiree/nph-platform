@@ -1,7 +1,7 @@
 # apps/api/repositories/lead_repository.py
 from apps.api.schemas.lead_schemas import LeadCreate, LeadUpdate
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional
 from shared.utils.normalization import clean_phone
 
 
@@ -27,7 +27,7 @@ class LeadRepository:
         await self.collection.create_index("deal_closed")
 
     async def insert_lead(self, lead_data: LeadCreate) -> dict:
-        """Standardizes structural payload shapes and updates the Atlas collection."""
+        """Standardizes structural payload shapes and updates the MongoDB collection."""
         payload = lead_data.model_dump()
         if payload.get("phone"):
             cleaned = clean_phone(payload["phone"])

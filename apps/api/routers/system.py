@@ -1,7 +1,6 @@
 # apps/api/routers/system.py
 from fastapi import APIRouter, HTTPException, status
 from redis import Redis
-from apps.api.schemas.task_schemas import AnalyticsTaskTrigger
 from shared.utils.database import db
 from celery import Celery
 import os
@@ -18,7 +17,7 @@ redis_client = Redis.from_url(REDIS_URL, socket_timeout=2)
 
 @router.get("/health", status_code=status.HTTP_200_OK)
 async def get_system_health():
-    """Performs real-time parallel pings across MongoDB Atlas and Redis to verify infrastructure health."""
+    """Performs real-time parallel pings across MongoDB and Redis to verify infrastructure health."""
     health_status = {
         "status": "healthy",
         "infrastructure": {
@@ -35,7 +34,7 @@ async def get_system_health():
         health_status["status"] = "unhealthy"
         health_status["infrastructure"]["redis_cache"] = f"failed: {str(e)}"
 
-    # 2. Perform a REAL dynamic async ping against MongoDB Atlas via the shared singleton client
+    # 2. Perform a REAL dynamic async ping against MongoDB via the shared singleton client
     try:
         if db.client is None:
             raise RuntimeError("MongoDB client not initialized")

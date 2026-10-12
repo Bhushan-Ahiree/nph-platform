@@ -1,6 +1,5 @@
-import pytest
 from unittest.mock import MagicMock, patch
-from apps.worker.tasks.ingestion_tasks import process_raw_group_dump, is_real_estate_listing, call_ollama_extract
+from apps.worker.tasks.ingestion_tasks import process_raw_group_dump, is_real_estate_listing
 from shared.utils.normalization import normalise_extracted_property
 
 def test_is_real_estate_listing_spam_filtering():

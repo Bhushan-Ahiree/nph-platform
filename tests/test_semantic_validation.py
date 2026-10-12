@@ -1,12 +1,9 @@
-import pytest
 from shared.utils.semantic_validation import (
     validate_title,
     validate_price,
     validate_locality,
     validate_listing,
-    validate_required_fields,
-    repair_property,
-    ValidationResult
+    repair_property
 )
 
 def test_validate_title_empty():

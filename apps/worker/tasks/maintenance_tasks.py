@@ -21,13 +21,10 @@ mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
 _mongo_client = None
 
 def get_db():
+    """Returns the worker's database handle, creating the MongoClient lazily on first use."""
     global _mongo_client
-    import pymongo
-    if _mongo_client is None or hasattr(pymongo.MongoClient, "return_value") or pymongo.MongoClient.__name__ == "MockMongoClient" or hasattr(MongoClient, "return_value"):
-        if hasattr(MongoClient, "return_value"):
-            _mongo_client = MongoClient(mongo_url)
-        else:
-            _mongo_client = pymongo.MongoClient(mongo_url)
+    if _mongo_client is None:
+        _mongo_client = MongoClient(mongo_url)
     return _mongo_client["nph_core"]
 
 

@@ -1,7 +1,6 @@
 # tests/test_site_visits.py
 import pytest
 from datetime import datetime, timezone
-import asyncio
 
 
 class TestSiteVisitRoutes:

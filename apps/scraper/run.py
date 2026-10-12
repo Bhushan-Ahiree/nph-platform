@@ -91,7 +91,7 @@ def main():
         else:
             print(f"[Streaming Error] Unexpected node reaction code {res.status_code}: {res.text}")
 
-    print(f"\n=== Ingestion Run Completed ===")
+    print("\n=== Ingestion Run Completed ===")
     print(f"-> Successfully Normalized & Inserted: {success_count} Listings")
     print(f"-> Caught & Blocked by Duplicate Guardrails: {duplicate_count} Listings\n")
 

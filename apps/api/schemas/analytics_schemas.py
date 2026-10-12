@@ -1,6 +1,5 @@
 # apps/api/schemas/analytics_schemas.py
 from pydantic import BaseModel
-from typing import Dict
 
 class PipelineSummaryResponse(BaseModel):
     total_active_leads: int

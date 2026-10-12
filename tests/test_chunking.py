@@ -1,4 +1,3 @@
-import pytest
 from shared.utils.chunking import MessageSplitter
 
 def test_whatsapp_export_strategy():
@@ -81,10 +80,10 @@ def test_emoji_heavy_and_marathi_posts():
     
 def test_continuation_patterns():
     # Test that continuation words at the beginning of a block are detected
-    assert MessageSplitter.is_continuation("Price: 50 Lakh") == True
-    assert MessageSplitter.is_continuation("Rent: 25k") == True
-    assert MessageSplitter.is_continuation("Contact: 9876543210") == True
-    assert MessageSplitter.is_continuation("Mob - 9999") == True
-    assert MessageSplitter.is_continuation("📞 Call now") == True
-    assert MessageSplitter.is_continuation("📍 Location details") == True
-    assert MessageSplitter.is_continuation("Not a continuation") == False
+    assert MessageSplitter.is_continuation("Price: 50 Lakh") is True
+    assert MessageSplitter.is_continuation("Rent: 25k") is True
+    assert MessageSplitter.is_continuation("Contact: 9876543210") is True
+    assert MessageSplitter.is_continuation("Mob - 9999") is True
+    assert MessageSplitter.is_continuation("📞 Call now") is True
+    assert MessageSplitter.is_continuation("📍 Location details") is True
+    assert MessageSplitter.is_continuation("Not a continuation") is False

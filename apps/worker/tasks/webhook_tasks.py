@@ -5,7 +5,6 @@ import uuid
 import httpx
 from datetime import datetime, timezone
 from celery import shared_task
-from pymongo import MongoClient
 from apps.worker.tasks.whatsapp_tasks import send_whatsapp_message
 from services.lead.scoring import calculate_priority_score, calculate_temperature
 
@@ -367,7 +366,7 @@ def process_incoming_message_event(event_id: str):
     ai_response_str = extract_facts_with_ai(conv["messages"], lead["requirements"])
     try:
         ai_data = json.loads(ai_response_str)
-    except:
+    except (json.JSONDecodeError, TypeError):
         ai_data = {"requirements": {}, "reply_text": "Could you clarify that?"}
 
     new_facts = ai_data.get("requirements", {})

@@ -268,7 +268,7 @@ def normalise_extracted_property(
     project_name = clean_str(raw.get("project_name")) or None
     
     # Sprint G: Landmark Extraction
-    landmarks = [clean_str(l) for l in raw.get("landmarks", []) if clean_str(l)] if isinstance(raw.get("landmarks"), list) else []
+    landmarks = [clean_str(item) for item in raw.get("landmarks", []) if clean_str(item)] if isinstance(raw.get("landmarks"), list) else []
     if not landmarks and clean_str(raw.get("landmark")):
         landmarks.append(clean_str(raw.get("landmark")))
 

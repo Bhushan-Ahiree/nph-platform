@@ -1,6 +1,6 @@
 # apps/api/schemas/lead_schemas.py
 from enum import Enum
-from pydantic import BaseModel, Field, EmailStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, EmailStr, model_validator
 from typing import Optional, List, Any, Literal
 from datetime import datetime, timezone
 
@@ -176,6 +176,4 @@ class LeadResponse(BaseModel):
 
         return data
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
-        populate_by_name = True
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()}, populate_by_name=True)

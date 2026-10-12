@@ -24,7 +24,7 @@ class MatchRepository:
         await self.collection.create_index("generated_at")
 
     async def insert_match(self, lead_id: str, property_ids: List[str], status: str = "SENT") -> dict:
-        """Writes a new recommendation block to MongoDB Atlas."""
+        """Writes a new recommendation block to MongoDB."""
         payload = {
             "match_id": f"match_{uuid.uuid4().hex[:8]}",
             "lead_id": lead_id,

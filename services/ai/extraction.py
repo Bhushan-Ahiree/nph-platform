@@ -1,7 +1,6 @@
 # services/ai/extraction.py
 import httpx
 import json
-import os
 import socket
 
 def get_docker_gateway_ip() -> str:

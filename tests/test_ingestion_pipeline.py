@@ -11,8 +11,6 @@ Coverage:
   - Full task loop: multi-listing extraction, deduplication rejection
 """
 import pytest
-import hashlib
-import re
 from unittest.mock import patch, MagicMock, AsyncMock
 
 
@@ -256,7 +254,6 @@ class TestPropertyRepositoryIngestionHash:
     async def test_upsert_property_initialises_ingestion_hash_field(self, mock_db):
         """upsert_property() must set ingestion_hash=None when not provided."""
         from apps.api.repositories.property_repository import PropertyRepository
-        from datetime import datetime, timezone
         repo = PropertyRepository()
         col = repo.get_collection()
         prop_data = {

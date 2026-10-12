@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
     # 1. ACTUALLY CONNECT TO MONGODB FIRST
     await connect_to_mongo()
 
-    print("[Lifespan Startup] Ensuring all MongoDB Atlas cluster collection indexes exist...")
+    print("[Lifespan Startup] Ensuring all MongoDB collection indexes exist...")
     try:
         # Trigger your repository indexing engines explicitly on container boot
         await LeadRepository().create_indexes()

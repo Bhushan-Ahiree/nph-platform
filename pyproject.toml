@@ -1,0 +1,14 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+extend-exclude = ["AI_CONTEXT", "scratch"]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+# E501: long lines are left to the formatter's judgement in this codebase
+# E701: one-line guards are used deliberately in the confidence-scoring tables
+ignore = ["E501", "E701"]
+
+[tool.ruff.lint.per-file-ignores]
+# The health-check log filter must be installed before uvicorn-related imports run
+"apps/api/main.py" = ["E402"]

@@ -1,7 +1,6 @@
 # shared/schemas/analytics_schemas.py
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Dict, Any
 
 class LocalitySnapshot(BaseModel):
     locality: str = Field(..., description="Target sub-market area")

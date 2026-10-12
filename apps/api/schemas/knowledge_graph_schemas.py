@@ -1,6 +1,6 @@
 # apps/api/schemas/knowledge_graph_schemas.py
 from datetime import datetime, timezone
-from typing import List, Optional, Literal, Any, Dict
+from typing import List, Optional, Literal, Any
 from pydantic import BaseModel, Field, model_validator
 
 

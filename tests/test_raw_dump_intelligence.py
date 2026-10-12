@@ -1,11 +1,8 @@
-import os
-import pytest
 from unittest.mock import patch
 from apps.worker.tasks.ingestion_tasks import (
     preprocess_whatsapp_text,
     is_real_estate_listing,
-    process_raw_group_dump,
-    split_into_message_blocks
+    process_raw_group_dump
 )
 from shared.utils.normalization import normalise_extracted_property, compute_ingestion_hash
 

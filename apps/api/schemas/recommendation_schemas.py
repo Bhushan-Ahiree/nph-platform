@@ -1,7 +1,7 @@
 # apps/api/schemas/recommendation_schemas.py
 from pydantic import BaseModel, Field, model_validator
 from typing import Literal, Any
-from datetime import datetime, timezone
+from datetime import datetime
 
 RecommendationEventLiteral = Literal[
     'SENT',

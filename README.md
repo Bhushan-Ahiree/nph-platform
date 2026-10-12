@@ -1,5 +1,6 @@
 # NPH Property Intelligence Platform
 
+[![CI](https://github.com/Bhushan-Ahiree/nph-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/Bhushan-Ahiree/nph-platform/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white)
 ![Celery](https://img.shields.io/badge/Celery-5.3-37814A?logo=celery&logoColor=white)

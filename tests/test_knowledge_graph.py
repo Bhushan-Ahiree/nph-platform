@@ -1,6 +1,5 @@
 # tests/test_knowledge_graph.py
 import pytest
-from datetime import datetime, timezone
 from apps.api.schemas.knowledge_graph_schemas import BuilderNode, ProjectNode, LocalityNode, AmenityNode
 from apps.api.repositories.knowledge_graph_repository import knowledge_graph_repo
 from shared.utils.normalization import normalise_extracted_property
@@ -18,10 +17,10 @@ def test_knowledge_graph_schemas_default_population():
     assert p.project_id == "proj_123"
     assert p.master_amenities == []
 
-    l = LocalityNode(_id="loc_nas_123", canonical_name="Gangapur Road", city="Nashik")
-    assert l.id == "loc_nas_123"
-    assert l.locality_id == "loc_nas_123"
-    assert l.pin_codes == []
+    loc = LocalityNode(_id="loc_nas_123", canonical_name="Gangapur Road", city="Nashik")
+    assert loc.id == "loc_nas_123"
+    assert loc.locality_id == "loc_nas_123"
+    assert loc.pin_codes == []
 
     a = AmenityNode(_id="amen_lift", canonical_name="lift", display_name="Lift")
     assert a.id == "amen_lift"

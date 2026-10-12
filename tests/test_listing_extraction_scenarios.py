@@ -1,5 +1,3 @@
-import os
-import pytest
 from unittest.mock import patch, MagicMock
 from apps.worker.tasks.ingestion_tasks import (
     preprocess_whatsapp_text,
@@ -11,7 +9,6 @@ from shared.utils.normalization import (
     compute_ingestion_hash,
     resolve_canonical_locality
 )
-from apps.api.schemas.property_schema_v2 import PropertySchemaV2
 
 def test_resolve_canonical_locality_aliases():
     """Verify canonical locality alias mapping without overwriting raw data."""
@@ -295,7 +292,7 @@ def test_deterministic_scoring_and_diagnostics():
 
 @patch("apps.worker.tasks.ingestion_tasks.get_db")
 @patch("apps.worker.tasks.ingestion_tasks.call_ollama_extract")
-def test_full_process_raw_group_dump_sprint_g(mock_call_ollama, mock_get_db):
+def test_full_process_raw_group_dump_scenarios(mock_call_ollama, mock_get_db):
     """Verify end-to-end processing of a raw group dump incorporating all Sprint G intelligence."""
     mock_db = MagicMock()
     mock_get_db.return_value = mock_db

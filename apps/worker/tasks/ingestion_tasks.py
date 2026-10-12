@@ -15,14 +15,14 @@ import os
 import re
 import json
 import time
-import hashlib
 import logging
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Tuple
 
 from celery import shared_task, current_app
 from pymongo import MongoClient
-from shared.utils.normalization import clean_phone
+from shared.utils.normalization import clean_phone, compute_ingestion_hash, normalise_extracted_property
+from shared.utils.chunking import MessageSplitter
 
 if "PYTEST_CURRENT_TEST" in os.environ:
     current_app.conf.task_always_eager = True
@@ -34,13 +34,10 @@ mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
 _mongo_client = None
 
 def get_db():
+    """Returns the worker's database handle, creating the MongoClient lazily on first use."""
     global _mongo_client
-    import pymongo
-    if _mongo_client is None or hasattr(pymongo.MongoClient, "return_value") or pymongo.MongoClient.__name__ == "MockMongoClient" or hasattr(MongoClient, "return_value"):
-        if hasattr(MongoClient, "return_value"):
-            _mongo_client = MongoClient(mongo_url)
-        else:
-            _mongo_client = pymongo.MongoClient(mongo_url)
+    if _mongo_client is None:
+        _mongo_client = MongoClient(mongo_url)
     return _mongo_client["nph_core"]
 
 # ---------------------------------------------------------------------------
@@ -115,7 +112,6 @@ def preprocess_whatsapp_text(raw_text: str) -> str:
     return text
 
 
-from shared.utils.chunking import MessageSplitter
 
 def split_into_message_blocks(raw_text: str) -> Tuple[str, List[str]]:
     """
@@ -234,7 +230,10 @@ def call_ollama_extract(chunk_text: str, source_group: str) -> List[Dict[str, An
             continue
 
         except urllib.error.URLError as conn_err:
-            logger.error(f"[Ollama] Attempt {attempt+1}: Connection error — is Ollama running? {conn_err}")
+            logger.error(
+                f"[Ollama] Attempt {attempt+1}: Connection error at {OLLAMA_BASE_URL} — is Ollama running? "
+                f"Set LLM_ENABLED=false to ingest with the deterministic parser only. ({conn_err})"
+            )
             time.sleep(2 ** attempt)
         except json.JSONDecodeError as parse_err:
             logger.error(f"[Ollama] Attempt {attempt+1}: Failed to parse model JSON output: {parse_err}")
@@ -285,7 +284,6 @@ def is_real_estate_listing(block_text: str) -> bool:
 # ---------------------------------------------------------------------------
 # Helpers: SHA-256 ingestion hash and normalization imported from shared
 # ---------------------------------------------------------------------------
-from shared.utils.normalization import compute_ingestion_hash, normalise_extracted_property
 
 
 # ---------------------------------------------------------------------------
@@ -346,7 +344,6 @@ def process_raw_group_dump(self, source_group: str, raw_text: str, event_id: str
     Returns:
         Summary dict with counts: total_extracted, inserted, deduplicated.
     """
-    import asyncio
     import os
 
     task_id = self.request.id
@@ -800,7 +797,6 @@ def notify_matching_leads(self, property_doc: dict):
     find all MATCHABLE or PROPERTIES_SENT leads whose requirements fit,
     and send them WhatsApp notifications.
     """
-    import os
     import uuid
     from datetime import datetime, timezone
     from apps.worker.tasks.whatsapp_tasks import send_whatsapp_message

@@ -1,7 +1,7 @@
 # apps/api/schemas/broker_schemas.py
 from datetime import datetime, timezone
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class BrokerProfileBase(BaseModel):
     name: str
@@ -20,6 +20,4 @@ class BrokerProfileCreate(BaseModel):
 class BrokerProfileResponse(BrokerProfileBase):
     id: str = Field(..., alias="_id")
 
-    class Config:
-        populate_by_name = True
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    model_config = ConfigDict(populate_by_name=True, json_encoders={datetime: lambda v: v.isoformat()})

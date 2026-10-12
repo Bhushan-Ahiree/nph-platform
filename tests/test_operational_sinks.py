@@ -1,7 +1,6 @@
 import pytest
 from datetime import datetime, timedelta, timezone
 from services.property.commission_shield import shield_property
-from apps.api.schemas.property_schema_v2 import PropertyPublicResponse
 from shared.utils.auth_guard import get_current_user
 
 def test_commission_shield_strips_sensitive_data():

@@ -9,7 +9,7 @@ from apps.worker.tasks.ingestion_tasks import notify_matching_leads
 @pytest.fixture(autouse=True)
 def patch_task_db(mock_db):
     """
-    Redirects databases inside task module by patching MongoClient globally.
+    Redirects the task modules' MongoClient to the in-memory mock database.
     """
     class MockMongoClient:
         def __init__(self, *args, **kwargs):
@@ -19,7 +19,10 @@ def patch_task_db(mock_db):
         def close(self):
             pass
 
-    with patch("pymongo.MongoClient", MockMongoClient):
+    with (
+        patch("apps.worker.tasks.ingestion_tasks.MongoClient", MockMongoClient),
+        patch("apps.worker.tasks.maintenance_tasks.MongoClient", MockMongoClient),
+    ):
         yield
 
 def test_ownership_type_normalization():

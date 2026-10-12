@@ -1,7 +1,7 @@
 {
   "source_name": "housing_portal_nashik",
   "target_city": "Nashik",
-  "base_url": "https://raw.githubusercontent.com/kanishk-sharma/real-estate-sample/main/listings.html",
+  "base_url": "",
   "selectors": {
     "card_container": "div.property-card",
     "title": "h2.listing-title",

@@ -1,5 +1,4 @@
 # apps/api/repositories/analytics_repository.py
-from datetime import datetime, timezone
 
 
 class AnalyticsRepository:

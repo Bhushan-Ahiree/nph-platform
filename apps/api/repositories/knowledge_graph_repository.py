@@ -1,7 +1,5 @@
 # apps/api/repositories/knowledge_graph_repository.py
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone
-from pymongo import ReturnDocument
+from typing import Optional, Dict, Any
 
 
 class KnowledgeGraphRepository:

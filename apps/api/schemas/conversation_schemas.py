@@ -1,6 +1,6 @@
 # apps/api/schemas/conversation_schemas.py
-from pydantic import BaseModel, Field
-from typing import List, Optional
+from pydantic import BaseModel, ConfigDict, Field
+from typing import List
 from datetime import datetime
 
 class MessageBlock(BaseModel):
@@ -19,5 +19,4 @@ class ConversationResponse(BaseModel):
     messages: List[MessageBlock]
     updated_at: datetime
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})

@@ -4,7 +4,6 @@ import uuid
 import logging
 from datetime import datetime, timezone
 from celery import shared_task
-from pymongo import MongoClient
 from services.whatsapp.client import MetaWhatsAppClient
 
 logger = logging.getLogger(__name__)

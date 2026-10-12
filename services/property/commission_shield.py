@@ -1,5 +1,5 @@
 # services/property/commission_shield.py
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 def shield_property(property_data: Dict[str, Any], role: str = "PUBLIC") -> Dict[str, Any]:
     """

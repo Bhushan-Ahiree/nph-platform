@@ -2,7 +2,6 @@
 import pytest
 from datetime import datetime, timezone
 from shared.utils.auth_guard import get_current_user
-from apps.api.schemas.site_visit_schemas import VisitStatus
 
 @pytest.mark.asyncio
 async def test_search_and_match_dynamic_role_serialization(api_client, mock_db):

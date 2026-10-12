@@ -3,7 +3,7 @@
 Tests for shared/utils/database.py — MongoDB connection lifecycle.
 """
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 
 
 class TestDatabaseConnection:
@@ -21,7 +21,7 @@ class TestDatabaseConnection:
 
     @pytest.mark.asyncio
     async def test_connect_to_mongo_missing_uri(self):
-        from shared.utils.database import connect_to_mongo, db
+        from shared.utils.database import connect_to_mongo
         with patch.dict("os.environ", {}, clear=True):
             # Remove MONGO_URI
             import os

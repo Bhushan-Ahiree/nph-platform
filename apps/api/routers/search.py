@@ -1,5 +1,5 @@
 # apps/api/routers/search.py
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Query
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 import re
@@ -7,7 +7,7 @@ from shared.utils.database import get_db_client
 from shared.utils.auth_guard import get_current_user_role
 from services.property.commission_shield import shield_property
 from apps.api.schemas.property_schema_v2 import PropertyPublicResponse, PropertyInternalResponse
-from typing import List, Dict, Any, Optional, Union
+from typing import Union
 
 router = APIRouter(prefix="/properties", tags=["Search Operations"])
 

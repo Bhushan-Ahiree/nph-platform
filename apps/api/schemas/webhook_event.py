@@ -1,6 +1,6 @@
 # apps/api/schemas/webhook_event.py
-from pydantic import BaseModel, Field
-from typing import Dict, Any, Optional
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Dict, Any
 from datetime import datetime, timezone
 
 class WebhookEventCreate(BaseModel):
@@ -18,8 +18,7 @@ class WebhookEventResponse(BaseModel):
     processing_status: str = "pending"
     received_at: datetime
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
 class LeadActivityLog(BaseModel):
     lead_id: str

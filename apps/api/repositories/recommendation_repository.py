@@ -1,7 +1,5 @@
 # apps/api/repositories/recommendation_repository.py
 from datetime import datetime, timezone
-from bson import ObjectId
-from typing import List, Optional
 
 class RecommendationRepository:
     """Manages persistence for recommendation events within the conversion funnel."""

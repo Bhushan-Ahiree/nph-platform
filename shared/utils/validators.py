@@ -1,4 +1,3 @@
-import re
 from typing import Dict, Any, Tuple, List
 from shared.utils.semantic_validation import repair_property
 
