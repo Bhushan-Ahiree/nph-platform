@@ -1,6 +1,7 @@
 # Environments
 .env
 .env.*
+!.env.example
 .venv
 env/
 venv/
@@ -16,7 +17,12 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-dump.txt
+# Celery runtime state
+celerybeat-schedule*
 
-# AI Knowledge Base (local only)
-AI_CONTEXT/
+# Private data: real WhatsApp dumps and audit outputs contain personal phone numbers
+dump*.txt
+audit_*.md
+audit_*.json
+data/raw/
+*.log

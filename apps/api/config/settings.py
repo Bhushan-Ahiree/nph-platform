@@ -11,7 +11,7 @@ class AppSettings(BaseSettings):
     DEBUG: bool = False
     
     # Security Configurations
-    JWT_SECRET: str = os.getenv("JWT_SECRET", "super_secret_fallback_key")
+    JWT_SECRET: str  # Required: no default, startup fails if missing
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     

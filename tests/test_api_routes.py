@@ -4,6 +4,7 @@ Integration tests for all FastAPI API routes.
 Uses the TestClient fixture from conftest.py which wires up all routers
 against mock MongoDB collections.
 """
+import os
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -255,7 +256,7 @@ class TestWebhookRoutes:
         response = api_client.get("/webhooks/whatsapp", params={
             "hub.mode": "subscribe",
             "hub.challenge": "test_challenge_123",
-            "hub.verify_token": "<redacted-verify-token>"
+            "hub.verify_token": os.environ["META_VERIFY_TOKEN"]
         })
         assert response.status_code == 200
         assert response.text == "test_challenge_123"

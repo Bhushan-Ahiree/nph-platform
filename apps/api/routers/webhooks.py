@@ -15,9 +15,9 @@ async def meta_security_handshake(
     hub_verify_token: str = Query(None, alias="hub.verify_token")
 ):
     """Executes the standard structural security verification handshake with Meta's servers."""
-    local_verify_token = os.getenv("META_VERIFY_TOKEN", "<redacted-verify-token>")
-    
-    if hub_mode == "subscribe" and hub_verify_token == local_verify_token:
+    local_verify_token = os.getenv("META_VERIFY_TOKEN")
+
+    if local_verify_token and hub_mode == "subscribe" and hub_verify_token == local_verify_token:
         print("[Webhook Verified] Meta successfully connected to NPH Local Environment.")
         return Response(content=hub_challenge, media_type="text/plain")
         

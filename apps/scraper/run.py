@@ -12,9 +12,12 @@ def authenticate_scraper() -> str:
     """Authenticates the scraper instance against the security core and secures a session token."""
     print("[Orchestrator] Requesting automated security handshake...")
     login_payload = {
-        "username": "bot.scraper@urbanpropertyhub.com",
-        "password": "<redacted-bot-password>"  # FIXED: Matches the Swagger registered bot password
+        "username": os.getenv("SCRAPER_BOT_EMAIL", ""),
+        "password": os.getenv("SCRAPER_BOT_PASSWORD", ""),
     }
+    if not login_payload["username"] or not login_payload["password"]:
+        print("[Security Error] SCRAPER_BOT_EMAIL / SCRAPER_BOT_PASSWORD are not set.")
+        return ""
     try:
         response = requests.post(f"{API_BASE_URL}/auth/login", data=login_payload)
         if response.status_code == 200:

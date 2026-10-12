@@ -17,6 +17,7 @@ os.environ.setdefault("JWT_SECRET", "test_secret_key_for_testing")
 os.environ.setdefault("JWT_ALGORITHM", "HS256")
 os.environ.setdefault("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("META_VERIFY_TOKEN", "test_verify_token")
 
 
 class AwaitableValue:

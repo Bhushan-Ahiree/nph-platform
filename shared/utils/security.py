@@ -8,8 +8,10 @@ import jwt
 # 1. Initialize the password hashing engine
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# 2. Pull configuration secrets from environment variables
-JWT_SECRET = os.getenv("JWT_SECRET", "fallback_secret_key_change_me")
+# 2. Pull configuration secrets from environment variables (no insecure fallback)
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET environment variable is not set. Copy .env.example to .env and set it.")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 

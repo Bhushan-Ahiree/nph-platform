@@ -1,16 +1,13 @@
 # shared/utils/auth_guard.py
-import os
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 import jwt
 from jwt.exceptions import InvalidTokenError
 from shared.utils.database import db
+from shared.utils.security import JWT_SECRET, JWT_ALGORITHM
 
 # 1. Point FastAPI to our login endpoint for token collection
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
-
-JWT_SECRET = os.getenv("JWT_SECRET", "fallback_secret_key_change_me")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     """Intercepts requests, decodes the JWT token, and validates the user profile."""
