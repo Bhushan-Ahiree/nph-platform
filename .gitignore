@@ -26,3 +26,15 @@ audit_*.md
 audit_*.json
 data/raw/
 *.log
+
+# Local-only: experiments and AI assistant notes
+scratch/
+scratch_test.py
+AI_CONTEXT/
+
+# Private business documentation
+docs/business/
+
+# Editors
+.vscode/
+.idea/
