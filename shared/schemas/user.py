@@ -1,13 +1,13 @@
 # shared/schemas/user.py
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from datetime import datetime
-from typing import Optional
 
 class UserRegister(BaseModel):
     email: EmailStr = Field(..., description="User email for login identity")
     password: str = Field(..., min_length=6, description="Password must be at least 6 characters")
     full_name: str = Field(..., min_length=2)
-    role: str = Field(default="broker", description="admin, broker, or client")
+    # No role field: self-registration always creates a "client" account.
+    # Staff roles (broker, admin) are granted by an administrator — see scripts/seed_users.py.
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -20,8 +20,7 @@ class UserResponse(BaseModel):
     role: str
     created_at: datetime
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 class Token(BaseModel):
     access_token: str

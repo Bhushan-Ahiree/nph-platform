@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, Depends
 from apps.api.schemas.match_schemas import MatchResponse, MatchUpdate
 from apps.api.repositories.match_repository import MatchRepository
 from apps.api.repositories.lead_repository import LeadRepository
@@ -6,11 +6,10 @@ from shared.utils.database import db
 from typing import List, Dict, Any, Union
 from datetime import datetime, timezone
 from shared.utils.database import get_db_client
-from shared.utils.auth_guard import get_current_user_role
+from shared.utils.auth_guard import get_current_user_role, require_staff
 from apps.api.schemas.property_schema_v2 import PropertyPublicResponse, PropertyInternalResponse
 from services.property.commission_shield import shield_property
 
-router = APIRouter(prefix="/matches", tags=["CRM Property Matching Engine"])
 import re
 from services.matching.engine import (
     calculate_base_structural_match_score,
@@ -18,12 +17,14 @@ from services.matching.engine import (
     get_broker_reliability_score
 )
 
+router = APIRouter(prefix="/matches", tags=["CRM Property Matching Engine"])
+
 match_repo = MatchRepository()
 lead_repo = LeadRepository()
 
 
 @router.post("/trigger/{lead_id}", response_model=List[MatchResponse])
-async def run_matching_engine_for_lead(lead_id: str):
+async def run_matching_engine_for_lead(lead_id: str, _staff: str = Depends(require_staff)):
     """Evaluates inventory properties against lead parameters using deterministic weighted logic."""
     lead = await lead_repo.get_lead_by_id(lead_id)
     if not lead:
@@ -89,13 +90,13 @@ async def run_matching_engine_for_lead(lead_id: str):
 
 
 @router.get("/{lead_id}", response_model=List[MatchResponse])
-async def get_calculated_lead_matches(lead_id: str):
+async def get_calculated_lead_matches(lead_id: str, _staff: str = Depends(require_staff)):
     """Retrieves cached recommendation entries calculated during matching passes."""
     return await match_repo.get_matches_by_lead(lead_id)
 
 
 @router.patch("/{match_id}", response_model=MatchResponse)
-async def update_match_status_endpoint(match_id: str, payload: MatchUpdate):
+async def update_match_status_endpoint(match_id: str, payload: MatchUpdate, _staff: str = Depends(require_staff)):
     """Updates the status of a recommendation block (e.g. SENT -> VIEWED)."""
     updated = await match_repo.update_match_status(match_id, payload.status)
     if not updated:

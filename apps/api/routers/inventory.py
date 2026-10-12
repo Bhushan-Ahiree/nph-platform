@@ -1,5 +1,6 @@
 # apps/api/routers/inventory.py
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response, Depends
+from shared.utils.auth_guard import require_staff
 from pydantic import BaseModel
 from datetime import datetime, timezone
 import logging
@@ -10,7 +11,7 @@ from shared.utils.database import db  # Use your existing db utility
 
 logger = logging.getLogger("uvicorn.error")
 
-router = APIRouter(prefix="/inventory", tags=["Inventory Intelligence"])
+router = APIRouter(prefix="/inventory", tags=["Inventory Intelligence"], dependencies=[Depends(require_staff)])
 
 class IngestRequest(BaseModel):
     raw_message: str

@@ -1,15 +1,16 @@
 # apps/api/routers/lead.py
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from shared.utils.auth_guard import require_staff
 from apps.api.schemas.lead_schemas import LeadCreate, LeadUpdate, LeadResponse
 from apps.api.repositories.lead_repository import LeadRepository  # FIXED IMPORT PATH
 from typing import List, Optional
 
-router = APIRouter(prefix="/leads", tags=["CRM Lead Management"])
+router = APIRouter(prefix="/leads", tags=["CRM Lead Management"], dependencies=[Depends(require_staff)])
 repo = LeadRepository()
 
 @router.post("", response_model=LeadResponse, status_code=status.HTTP_201_CREATED)
 async def create_new_lead(payload: LeadCreate):
-    """Parses customer demand criteria, validates input logic, and stores inside Atlas."""
+    """Parses customer demand criteria, validates input logic, and stores in MongoDB."""
     try:
         return await repo.insert_lead(payload)
     except Exception as e:

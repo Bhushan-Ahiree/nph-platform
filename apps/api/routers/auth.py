@@ -20,6 +20,7 @@ async def register_user(user_in: UserRegister):
             detail="An account with this email address is already registered."
         )
         
+    user_dict["role"] = "client"
     raw_password = user_dict.pop("password")
     user_dict["hashed_password"] = hash_password(raw_password)
     user_dict["created_at"] = datetime.now(timezone.utc)

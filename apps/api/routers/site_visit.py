@@ -1,10 +1,11 @@
 # apps/api/routes/site_visit.py
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from shared.utils.auth_guard import require_staff
 from typing import List
 from apps.api.schemas.site_visit_schemas import SiteVisitCreate, SiteVisitUpdate, SiteVisitResponse, VisitStatus
 from apps.api.repositories.site_visit_repository import site_visit_repo
 
-router = APIRouter(prefix="/site-visits", tags=["Site Visits Operations"])
+router = APIRouter(prefix="/site-visits", tags=["Site Visits Operations"], dependencies=[Depends(require_staff)])
 
 
 @router.post("/", response_model=SiteVisitResponse, status_code=status.HTTP_201_CREATED)

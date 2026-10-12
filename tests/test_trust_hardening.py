@@ -894,10 +894,10 @@ class TestVerifyAndInactiveRoutes:
 
         assert response.status_code == 404
 
-    def test_both_endpoints_require_authentication(self, api_client):
+    def test_both_endpoints_require_authentication(self, anon_client):
         """Both /verify and /inactive endpoints must reject unauthenticated requests."""
-        verify_resp = api_client.patch("/properties/prop_abc/verify")
-        inactive_resp = api_client.patch("/properties/prop_abc/inactive")
+        verify_resp = anon_client.patch("/properties/prop_abc/verify")
+        inactive_resp = anon_client.patch("/properties/prop_abc/inactive")
         # FastAPI returns 401 (Unauthorized) when no Bearer token is provided
         assert verify_resp.status_code == 401
         assert inactive_resp.status_code == 401

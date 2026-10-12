@@ -19,6 +19,18 @@ class TestRootEndpoint:
         assert data["message"] == "NPH Operating System Backend Platform Running"
 
 
+def _post_signed_webhook(api_client, payload, secret=None):
+    """Posts a payload the way Meta does: raw JSON body + X-Hub-Signature-256 HMAC header."""
+    import hashlib
+    import hmac
+    import json
+    body = json.dumps(payload).encode()
+    key = (secret or os.environ["META_APP_SECRET"]).encode()
+    signature = "sha256=" + hmac.new(key, body, hashlib.sha256).hexdigest()
+    return api_client.post("/webhooks/whatsapp", content=body,
+                           headers={"Content-Type": "application/json", "X-Hub-Signature-256": signature})
+
+
 class TestAuthRoutes:
     """Tests /auth/register and /auth/login endpoints."""
 
@@ -286,18 +298,27 @@ class TestWebhookRoutes:
                 }]
             }]
         }
-        response = api_client.post("/webhooks/whatsapp", json=payload)
+        response = _post_signed_webhook(api_client, payload)
         assert response.status_code == 202
         assert response.json()["status"] == "accepted"
         mock_celery_task.delay.assert_called_once()
 
     def test_whatsapp_empty_payload_accepted(self, api_client):
         """Meta sends various non-message payloads; we must always return 2xx."""
-        response = api_client.post("/webhooks/whatsapp", json={
+        response = _post_signed_webhook(api_client, {
             "object": "whatsapp_business_account",
             "entry": []
         })
         assert response.status_code == 202
+
+    def test_webhook_rejects_missing_signature(self, api_client):
+        response = api_client.post("/webhooks/whatsapp", json={"object": "whatsapp_business_account", "entry": []})
+        assert response.status_code == 403
+
+    def test_webhook_rejects_wrong_signature(self, api_client):
+        response = _post_signed_webhook(api_client, {"object": "whatsapp_business_account", "entry": []},
+                                        secret="not_the_real_secret")
+        assert response.status_code == 403
 
 
 class TestSearchRoutes:

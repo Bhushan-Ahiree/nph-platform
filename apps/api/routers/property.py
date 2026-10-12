@@ -10,7 +10,7 @@ from celery import Celery
 from pydantic import BaseModel
 
 from apps.api.schemas.property_schema_v2 import PropertyCreate, PropertyDB
-from shared.utils.auth_guard import get_current_user
+from shared.utils.auth_guard import get_current_user, require_staff
 from apps.api.repositories.property_repository import property_repo
 from apps.api.schemas.raw_ingestion_schemas import RawChunkIngestionRequest, RawChunkIngestionResponse
 from apps.api.repositories.webhook_event_repository import webhook_event_repo
@@ -47,7 +47,8 @@ async def get_properties(
     skip: int = 0, limit: int = 50,
     city: Optional[str] = Query(None), locality: Optional[str] = Query(None),
     bhk: Optional[int] = Query(None), property_type: Optional[str] = Query(None),
-    min_price: Optional[float] = Query(None), max_price: Optional[float] = Query(None)
+    min_price: Optional[float] = Query(None), max_price: Optional[float] = Query(None),
+    _staff: str = Depends(require_staff)
 ):
     # Dynamic query object generation targeting flat V2 schema fields
     mongo_query: Dict[str, Any] = {}
@@ -71,7 +72,7 @@ async def get_properties(
 
 
 @router.post("/", response_model=PropertyDB, status_code=status.HTTP_201_CREATED)
-async def create_property(property_in: PropertyCreate, current_user: dict = Depends(get_current_user)):
+async def create_property(property_in: PropertyCreate, current_user: dict = Depends(get_current_user), _staff: str = Depends(require_staff)):
     property_dict = property_in.model_dump()
 
     # Clean check via our repository layer abstraction helper using flat V2 fields
@@ -93,7 +94,7 @@ async def create_property(property_in: PropertyCreate, current_user: dict = Depe
 
 
 @router.patch("/{property_id}", response_model=PropertyDB)
-async def update_property(property_id: str, updates: dict, current_user: dict = Depends(get_current_user)):
+async def update_property(property_id: str, updates: dict, current_user: dict = Depends(get_current_user), _staff: str = Depends(require_staff)):
     banned_updates = ["_id", "id", "property_id", "created_at", "posted_by_user_id"]
     for field in banned_updates:
         updates.pop(field, None)
@@ -110,7 +111,7 @@ async def update_property(property_id: str, updates: dict, current_user: dict = 
 
 
 @router.delete("/{property_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_property(property_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_property(property_id: str, current_user: dict = Depends(get_current_user), _staff: str = Depends(require_staff)):
     success = await property_repo.delete(property_id)
     if not success:
         raise HTTPException(status_code=404, detail="Property not found.")
@@ -118,7 +119,7 @@ async def delete_property(property_id: str, current_user: dict = Depends(get_cur
 
 
 @router.patch("/{property_id}/verify", response_model=VerifyResponse)
-async def verify_property(property_id: str, current_user: dict = Depends(get_current_user)):
+async def verify_property(property_id: str, current_user: dict = Depends(get_current_user), _staff: str = Depends(require_staff)):
     """
     PATCH /properties/{property_id}/verify
 
@@ -174,7 +175,7 @@ async def verify_property(property_id: str, current_user: dict = Depends(get_cur
 
 @router.patch("/{property_id}/inactive", response_model=InactiveResponse)
 @router.patch("/{property_id}/archive", response_model=InactiveResponse)
-async def mark_property_inactive(property_id: str, current_user: dict = Depends(get_current_user)):
+async def mark_property_inactive(property_id: str, current_user: dict = Depends(get_current_user), _staff: str = Depends(require_staff)):
     """
     PATCH /properties/{property_id}/inactive
 
@@ -223,7 +224,7 @@ async def mark_property_inactive(property_id: str, current_user: dict = Depends(
         "immediately offloads AI extraction to the Celery worker. Returns 202 instantly."
     )
 )
-async def ingest_raw_group_chunk(payload: RawChunkIngestionRequest):
+async def ingest_raw_group_chunk(payload: RawChunkIngestionRequest, _staff: str = Depends(require_staff)):
     """
     POST /properties/raw-chunk
 

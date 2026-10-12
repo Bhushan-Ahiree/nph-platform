@@ -1,10 +1,11 @@
 # apps/api/routers/conversation.py
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from shared.utils.auth_guard import require_staff
 from apps.api.schemas.conversation_schemas import ConversationAppend, ConversationResponse
 from apps.api.repositories.conversation_repository import ConversationRepository
 from apps.api.repositories.lead_repository import LeadRepository
 
-router = APIRouter(prefix="/conversations", tags=["CRM Conversation Memory"])
+router = APIRouter(prefix="/conversations", tags=["CRM Conversation Memory"], dependencies=[Depends(require_staff)])
 conv_repo = ConversationRepository()
 lead_repo = LeadRepository()
 

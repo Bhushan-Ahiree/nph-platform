@@ -2,6 +2,9 @@ from fastapi import APIRouter, HTTPException, Query, status, Request, Response
 from apps.api.schemas.webhook_event import WebhookEventCreate
 from apps.api.repositories.webhook_event_repository import WebhookEventRepository
 from apps.worker.tasks.webhook_tasks import process_incoming_message_event
+import hashlib
+import hmac
+import json
 import os
 
 router = APIRouter(prefix="/webhooks", tags=["Meta Automation Gateways"])
@@ -27,9 +30,19 @@ async def meta_security_handshake(
 @router.post("/instagram", status_code=status.HTTP_202_ACCEPTED)
 async def process_async_meta_payload(request: Request):
     """Ingests Meta's deeply nested payload, normalizes it, and pushes to Celery."""
+    raw_body = await request.body()
+
+    # 0. Reject anything not signed by Meta (HMAC-SHA256 of the raw body with the app secret)
+    app_secret = os.getenv("META_APP_SECRET")
+    if not app_secret:
+        raise HTTPException(status_code=403, detail="Webhook signing secret is not configured.")
+    expected = "sha256=" + hmac.new(app_secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, request.headers.get("X-Hub-Signature-256", "")):
+        raise HTTPException(status_code=403, detail="Invalid webhook signature.")
+
     try:
         # Get the raw Meta JSON
-        payload = await request.json()
+        payload = json.loads(raw_body)
         
         # 1. Ensure it's actually a WhatsApp message (ignore read receipts, etc.)
         if payload.get("object") == "whatsapp_business_account":

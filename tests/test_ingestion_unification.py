@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 # Ensure scripts directory is in sys.path
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
-import bulk_ingest
+import ingest_dump
 
 @pytest.fixture(autouse=True)
 def clean_mock_db(mock_db):
@@ -117,21 +117,24 @@ def test_inventory_ingest_duplicate_collision(mock_extract, api_client, mock_db)
 
 @pytest.mark.asyncio
 @patch("httpx.AsyncClient.post")
-async def test_bulk_ingest_client_call(mock_post):
-    """Verify that bulk_ingest.py correctly reads messages from a file and posts to raw-chunk."""
-    mock_resp = MagicMock()
-    mock_resp.status_code = 202
-    mock_resp.json.return_value = {"status": "accepted"}
-    mock_post.return_value = mock_resp
-    
+async def test_ingest_dump_client_call(mock_post):
+    """Verify that ingest_dump.py logs in, then posts the file contents to raw-chunk with the token."""
+    login_resp = MagicMock(status_code=200)
+    login_resp.json.return_value = {"access_token": "tok123", "token_type": "bearer"}
+    ingest_resp = MagicMock(status_code=202)
+    ingest_resp.json.return_value = {"status": "accepted"}
+    mock_post.side_effect = [login_resp, ingest_resp]
+
     test_filepath = "temp_unification_messages.txt"
     with open(test_filepath, "w", encoding="utf-8") as f:
         f.write("Test broker WhatsApp group message dump contents.")
-        
+
     try:
-        await bulk_ingest.process_bulk_file("Nashik Brokers Premium", test_filepath)
-        assert mock_post.called
+        await ingest_dump.ingest(test_filepath, "Nashik Brokers Premium")
+        assert mock_post.call_count == 2
         args, kwargs = mock_post.call_args
+        assert args[0].endswith("/properties/raw-chunk")
+        assert kwargs["headers"]["Authorization"] == "Bearer tok123"
         assert kwargs["json"]["source_group"] == "Nashik Brokers Premium"
         assert kwargs["json"]["raw_text"] == "Test broker WhatsApp group message dump contents."
     finally:

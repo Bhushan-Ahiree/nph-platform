@@ -21,20 +21,20 @@ class TestUserSchemas:
             email="broker@nph.com",
             password="securepass123",
             full_name="Bhushan Ahiree",
-            role="broker"
         )
         assert user.email == "broker@nph.com"
         assert user.full_name == "Bhushan Ahiree"
-        assert user.role == "broker"
 
-    def test_user_register_default_role(self):
+    def test_user_register_ignores_client_supplied_role(self):
+        """Self-registration must not let callers choose their own role."""
         from shared.schemas.user import UserRegister
         user = UserRegister(
             email="test@nph.com",
             password="securepass123",
-            full_name="Test User"
+            full_name="Test User",
+            role="admin"
         )
-        assert user.role == "broker"
+        assert not hasattr(user, "role")
 
     def test_user_register_short_password_rejected(self):
         from shared.schemas.user import UserRegister

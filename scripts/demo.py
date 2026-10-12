@@ -15,6 +15,17 @@ GROUP_NAME = "Sample Nashik Property Group"
 TIMEOUT_SECONDS = 120
 
 
+def login(client: httpx.Client) -> None:
+    """Both endpoints used here are staff-only, so log in with the seeded admin account."""
+    email, password = os.getenv("ADMIN_EMAIL"), os.getenv("ADMIN_PASSWORD")
+    if not email or not password:
+        sys.exit("ADMIN_EMAIL / ADMIN_PASSWORD are not set. Run scripts/seed_users.py first.")
+    resp = client.post(f"{API_URL}/auth/login", data={"username": email, "password": password})
+    if resp.status_code != 200:
+        sys.exit(f"Login failed ({resp.status_code}). Did you run scripts/seed_users.py?")
+    client.headers["Authorization"] = f"Bearer {resp.json()['access_token']}"
+
+
 def fetch_listings(client: httpx.Client) -> list:
     return client.get(f"{API_URL}/properties/", params={"limit": 50}).json()
 
@@ -24,6 +35,7 @@ def main():
         raw_text = f.read()
 
     with httpx.Client(timeout=30.0) as client:
+        login(client)
         before = len(fetch_listings(client))
 
         print(f"1. Sending {len(raw_text)} chars of raw WhatsApp text to POST /properties/raw-chunk")

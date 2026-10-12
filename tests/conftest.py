@@ -6,18 +6,19 @@ Mocks the MongoDB database layer so tests run without external infrastructure.
 import os
 import sys
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # Ensure project root is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Set required environment variables before any app code imports
 os.environ.setdefault("MONGO_URI", "mongodb://localhost:27017/nph_test")
-os.environ.setdefault("JWT_SECRET", "test_secret_key_for_testing")
+os.environ.setdefault("JWT_SECRET", "test_secret_key_for_testing_at_least_32_bytes")
 os.environ.setdefault("JWT_ALGORITHM", "HS256")
 os.environ.setdefault("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("META_VERIFY_TOKEN", "test_verify_token")
+os.environ.setdefault("META_APP_SECRET", "test_app_secret")
 
 
 class AwaitableValue:
@@ -469,6 +470,17 @@ class MockDatabase:
 # Fixtures
 # ---------------------------------------------------------------------------
 @pytest.fixture(autouse=True)
+def reset_worker_db_clients():
+    """Worker tasks cache a MongoClient; reset it so each test's MongoClient patch takes effect."""
+    from apps.worker.tasks import ingestion_tasks, maintenance_tasks
+    ingestion_tasks._mongo_client = None
+    maintenance_tasks._mongo_client = None
+    yield
+    ingestion_tasks._mongo_client = None
+    maintenance_tasks._mongo_client = None
+
+
+@pytest.fixture(autouse=True)
 def mock_db():
     """
     Directly swaps the shared database singleton's client so all repository code
@@ -545,5 +557,40 @@ def api_client():
     async def root():
         return {"message": "NPH Operating System Backend Platform Running"}
 
-    client = TestClient(test_app)
+    # Authenticate as a staff admin by default. The override still demands a Bearer header,
+    # so unauthenticated behaviour stays testable via the anon_client fixture.
+    from fastapi import HTTPException, Request
+    from shared.utils.auth_guard import get_current_user
+
+    async def mock_get_current_user(request: Request):
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Could not validate credentials. Please log in.")
+        return {"id": "test_user_id_123", "email": "test@nph.com", "role": "admin", "full_name": "Test Admin"}
+
+    test_app.dependency_overrides[get_current_user] = mock_get_current_user
+
+    client = TestClient(test_app, headers={"Authorization": "Bearer test-token"})
     return client
+
+
+@pytest.fixture
+def anon_client(api_client):
+    """Same test app as api_client, but sends no credentials."""
+    from fastapi.testclient import TestClient
+    return TestClient(api_client.app)
+
+
+@pytest.fixture
+def client_role_client(api_client):
+    """Same test app, authenticated as a self-registered (PUBLIC) client account."""
+    from fastapi import HTTPException, Request
+    from shared.utils.auth_guard import get_current_user
+
+    async def mock_client_user(request: Request):
+        if not request.headers.get("Authorization", "").startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Could not validate credentials. Please log in.")
+        return {"id": "client_user_1", "email": "client@nph.com", "role": "client", "full_name": "Test Client"}
+
+    api_client.app.dependency_overrides[get_current_user] = mock_client_user
+    return api_client

@@ -1,10 +1,11 @@
 # apps/api/routers/operator_actions.py
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from shared.utils.auth_guard import require_staff
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 
-router = APIRouter(prefix="/operator-actions", tags=["Operations Workflow"])
+router = APIRouter(prefix="/operator-actions", tags=["Operations Workflow"], dependencies=[Depends(require_staff)])
 
 class OperatorActionResponse(BaseModel):
     id: str

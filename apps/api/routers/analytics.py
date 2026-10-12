@@ -1,12 +1,13 @@
 # apps/api/routes/analytics.py
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Depends
+from shared.utils.auth_guard import require_staff
 from apps.api.schemas.analytics_schemas import PipelineSummaryResponse, LeadSummaryResponse
 from apps.api.schemas.lead_schemas import LeadResponse
 from apps.api.repositories.analytics_repository import AnalyticsRepository
 from apps.api.repositories.lead_repository import LeadRepository
 from datetime import datetime, timezone
 
-router = APIRouter(prefix="/analytics", tags=["CRM Operational Insights"])
+router = APIRouter(prefix="/analytics", tags=["CRM Operational Insights"], dependencies=[Depends(require_staff)])
 analytics_repo = AnalyticsRepository()
 lead_repo = LeadRepository()
 
