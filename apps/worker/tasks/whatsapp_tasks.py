@@ -10,9 +10,18 @@ from services.whatsapp.client import MetaWhatsAppClient
 logger = logging.getLogger(__name__)
 
 # Resolve connection pool targeting database cluster
-mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
-client = MongoClient(mongo_url)
-db = client["nph_core"]
+class DatabaseProxy:
+    def __init__(self):
+        self._client = None
+    
+    def __getitem__(self, collection_name):
+        if self._client is None:
+            from pymongo import MongoClient
+            mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
+            self._client = MongoClient(mongo_url)
+        return self._client["nph_core"][collection_name]
+
+db = DatabaseProxy()
 
 @shared_task(
     name="tasks.whatsapp_tasks.send_whatsapp_message",

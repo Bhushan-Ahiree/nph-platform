@@ -386,7 +386,7 @@ class TestPropertySchemaV2:
                 title="Test",
                 area="Test",
                 price=10000,
-                listing_type="lease",  # Not in Literal
+                listing_type="exchange",  # Not in Literal
                 source={"type": "broker_group"}
             )
 

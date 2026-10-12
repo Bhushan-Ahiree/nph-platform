@@ -235,6 +235,29 @@ def normalise_extracted_property(
     now = datetime.now(timezone.utc)
     price_val = safe_price(raw.get("price"), 0)
     area_val = safe_area(raw.get("carpet_area_sqft") or raw.get("area_sqft") or raw.get("sqft") or raw.get("area_value"))
+    bhk_val = safe_int(raw.get("bhk"), 0)
+
+    raw_text = raw.get("raw_text") or raw.get("_raw_text") or ""
+    if raw_text:
+        from shared.utils.deterministic_parser import CategoryAExtractor
+        det_intent = CategoryAExtractor.detect_intent(raw_text)
+        det_price_info = CategoryAExtractor.extract_price(raw_text)
+        det_area_info = CategoryAExtractor.extract_area(raw_text)
+        det_bhk_info = CategoryAExtractor.extract_bhk(raw_text)
+        det_phone = CategoryAExtractor.extract_phone(raw_text)
+
+        if det_price_info["price"] > 0:
+            price_val = det_price_info["price"]
+        if det_area_info["carpet_area_sqft"] is not None:
+            area_val = det_area_info["carpet_area_sqft"]
+        if det_bhk_info["bhk"] > 0:
+            bhk_val = det_bhk_info["bhk"]
+        if det_phone:
+            broker_phone = clean_phone(det_phone)
+        if det_intent["listing_type"] in ("sale", "lease", "rent"):
+            listing_type = det_intent["listing_type"]
+        if det_intent["property_type"] in ("land", "plot", "commercial", "villa", "apartment"):
+            property_type = det_intent["property_type"]
 
     # Sprint G: Locality Intelligence
     raw_locality = clean_str(raw.get("raw_locality") or raw.get("locality") or raw.get("area"), "Unknown")
@@ -482,7 +505,7 @@ def normalise_extracted_property(
         "missing_fields": missing_fields,
         "warnings": warnings,
         "confidence_breakdown": confidence_breakdown,
-        "bhk": safe_int(raw.get("bhk"), 0),
+        "bhk": bhk_val,
         "price": price_val,
         "normalized_price_inr": price_val,
         "parking": False,
@@ -522,6 +545,7 @@ def normalise_extracted_property(
 
         # Sprint A: raw message traceability (caller injects after log is stored)
         "raw_message_id": raw.get("_raw_message_id"),  # injected by the task loop
+        "raw_text": raw_text,
 
         # Sprint A: LLM extraction confidence score (default 100 for Llama 3.2)
         "extraction_confidence": 100,

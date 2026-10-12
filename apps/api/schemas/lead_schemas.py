@@ -44,7 +44,7 @@ class LeadRequirements(BaseModel):
     min_price: Optional[float] = None
     max_price: Optional[float] = None
     property_type: Optional[str] = None
-    listing_type: Optional[Literal["rent", "buy", "sale"]] = None
+    listing_type: Optional[Literal["rent", "buy", "sale", "lease", "pg", "roommate", "joint_venture", "joint venture"]] = None
 
 
 class LeadCreate(BaseModel):

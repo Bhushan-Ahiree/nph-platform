@@ -88,7 +88,7 @@ class PropertySchemaV2(BaseModel):
     title: str
     description: Optional[str] = None
     property_type: Literal["apartment", "villa", "plot", "commercial", "flat", "land"] = "apartment"
-    listing_type: Literal["rent", "buy", "sale"] = "rent"
+    listing_type: Literal["rent", "buy", "sale", "lease", "pg", "roommate", "joint_venture", "joint venture"] = "rent"
 
     # Geographic Data
     city: Literal["Nashik", "Pune", "Mumbai"] = "Nashik"
@@ -352,7 +352,7 @@ class PropertyPublicResponse(BaseModel):
     id: str = Field(..., alias="_id")
     property_id: str
     property_type: str
-    listing_type: Literal["rent", "buy", "sale"]
+    listing_type: Literal["rent", "buy", "sale", "lease", "pg", "roommate", "joint_venture", "joint venture"]
     city: Literal["Nashik", "Pune", "Mumbai"]
     area: str
     bhk: int
@@ -454,7 +454,7 @@ class PropertyInternalResponse(BaseModel):
     id: str = Field(..., alias="_id")
     property_id: str
     property_type: str
-    listing_type: Literal["rent", "buy", "sale"]
+    listing_type: Literal["rent", "buy", "sale", "lease", "pg", "roommate", "joint_venture", "joint venture"]
     city: Literal["Nashik", "Pune", "Mumbai"]
     area: str
     bhk: int

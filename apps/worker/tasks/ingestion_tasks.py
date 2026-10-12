@@ -18,7 +18,7 @@ import time
 import hashlib
 import logging
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 from celery import shared_task, current_app
 from pymongo import MongoClient
@@ -57,85 +57,38 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:1143
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 
 # System prompt passed on every Ollama inference call.
-OLLAMA_SYSTEM_PROMPT = """You are an elite real estate data extraction engine for Nashik Property Hub.
+OLLAMA_SYSTEM_PROMPT = """You are an elite real estate semantic enrichment engine for Nashik Property Hub.
 
-You will be given raw, unformatted chat messages copy-pasted from WhatsApp broker groups.
+You will be given a JSON array of partially structured property objects. Each object contains deterministically extracted ground-truth fields (price, bhk, carpet_area_sqft, broker_phone, listing_type, property_type) along with the original "raw_text".
 
 Your task is to:
-1. Read all messages carefully.
-2. Identify EVERY distinct property that is being ADVERTISED or OFFERED (not requested).
-3. For each property, extract the following fields into a JSON object:
-   - "title": Short descriptive title, e.g. "2 BHK Apartment in Indira Nagar"
-   - "description": Any extra details mentioned (amenities, floor, furnishing, etc.)
-   - "property_type": One of: apartment, villa, plot, commercial, flat, land, agricultural, office, hotel, warehouse, jv, pg, roommate
-   - "listing_type": One of: rent, buy, sale, lease, pg, roommate, jv
-   - "city": Infer from context (e.g. Nashik, Pune, Mumbai, Thane, etc.). Default to Nashik if unsure.
-   - "area": Locality or neighbourhood name, e.g. "Indira Nagar", "College Road"
+1. Accept all provided integer fields (price, bhk, carpet_area_sqft) and phone numbers as absolute ground truth. NEVER modify or recalculate them.
+2. For each property object in the input array, output an enriched JSON object containing ALL the original fields plus the following semantic fields completed:
+   - "title": Generate a clean, professional summary title (e.g. "2 BHK Apartment in Indira Nagar" or "20 Acres Industrial Land in Chincholi").
+   - "description": Synthesize a structured description from the raw text notes.
+   - "city": Infer from context (e.g. Nashik, Pune, Mumbai). Default to Nashik if unsure.
+   - "area": Locality or neighbourhood name, e.g. "Indira Nagar", "College Road". Do NOT use WhatsApp group names.
    - "locality": Exact micro-market or locality name.
    - "raw_locality": The exact raw locality/area string as written in the message. Maintain aliases.
-   - "builder_name": Extract builder name (e.g. Ashoka, Suyojit, Hari, Roongta, Dream City, Ekdant, Shriram, Datar). If confidence is low, leave null; never hallucinate.
-   - "project_name": Extract project name if mentioned. If confidence is low, leave null.
-   - "landmark": Any nearby landmark mentioned (e.g. "Near Jatra Hotel").
-   - "landmarks": Array of nearby landmarks extracted (e.g. ["CBS", "Mumbai Naka", "City Center Mall", "BYK College", "Vidya Vikas Circle", "Gangapur Road", "Nashik Road", "Dwarka"]). These dramatically improve future search.
-   - "amenities": Array of amenities extracted into a structured list (e.g. ["Lift", "Parking", "Garden", "Terrace", "Power Backup", "Security", "Swimming Pool", "Club House", "Gym", "Furnished", "Semi Furnished"]). Do not leave them just inside description.
-   - "possession_status": Detect possession status (e.g. "Ready Possession", "Under Construction", "Immediate Possession", "Resale", "New Booking") or null.
+   - "builder_name": Extract builder name (e.g. Ashoka, Suyojit, Hari, Roongta, Dream City). Leave null if uncertain.
+   - "project_name": Extract project name if mentioned. Leave null if uncertain.
+   - "landmark": Any nearby landmark mentioned.
+   - "landmarks": Array of nearby landmarks extracted (e.g. ["CBS", "Mumbai Naka", "City Center Mall", "Gangapur Road", "Nashik Road", "Dwarka"]).
+   - "amenities": Array of amenities extracted.
+   - "possession_status": Detect possession status (e.g. "Ready Possession", "Under Construction") or null.
    - "furnishing_status": Normalize furnishing status (e.g. "Fully Furnished", "Semi Furnished", "Unfurnished") or null.
-   - "poster_type": Infer poster type (e.g. "Broker", "Builder", "Owner", "Channel Partner", "Investor", "Developer"). Use "Unknown" if uncertain.
-   - "bhk": Integer number of bedrooms (0 if not mentioned or non-residential)
-   - "price": Integer price in INR (monthly rent, sale price, package, no commas or symbols). Parse lakh/crore/k correctly.
-   - "carpet_area_sqft": Integer carpet area in square feet. Parse guntha/acre/sqm/vaar correctly.
-   - "broker_phone": The phone number of the person advertising this property. Extract digits only, no spaces or dashes. Use null if not found.
-   - "ownership_type": One of: "owner", "broker"
-     Set to "owner" if the message says: "direct owner", "owner", "malik", "no brokerage", "malak", "brokerage free", "direct deal".
-     Set to "broker" if the message says: "broker", "agent", or has no clear ownership indicator.
-     Default to "broker" if unsure.
-   - "missing_fields": Array of strings for missing critical information (e.g. ["price", "phone", "area", "location", "property_type"]).
-   - "warnings": Array of strings for anomalies (e.g. ["spam probability", "contradictory information"]).
-   - "confidence_breakdown": Dictionary mapping field names to confidence scores (0-100), e.g. {"price": 100, "phone": 100, "locality": 100, "property_type": 100}.
+   - "poster_type": Infer poster type (e.g. "Broker", "Builder", "Owner", "Channel Partner", "Investor", "Developer").
+   - "ownership_type": "owner" or "broker".
+   - "missing_fields": Array of strings for missing critical information.
+   - "warnings": Array of strings for anomalies.
+   - "confidence_breakdown": Dictionary mapping field names to confidence scores (0-100).
+   - "raw_text": Must preserve the exact "raw_text" from the input.
 
 IMPORTANT RULES:
-- Output ONLY a valid JSON array. No explanation, no markdown, no extra text.
-- Each element of the array is one property listing.
-- If NO properties are found, output an empty array: []
-- If a phone number appears near a listing, associate it with that listing as broker_phone.
-- Ignore messages that are requests/inquiries (e.g. "Need 2BHK", "pahije", "required"). Only extract offers/sales.
-- Prices should be integers (e.g. 15000, not "15k" or "15,000").
-- Reject obvious spam, electronics ads (TVs, ACs), marketing workshops, promotional group links, and non-property messages.
-
-Example output:
-[
-  {
-    "title": "2 BHK Apartment in Indira Nagar",
-    "description": "Semi-furnished, 2nd floor, parking available",
-    "property_type": "apartment",
-    "listing_type": "rent",
-    "city": "Nashik",
-    "area": "Indira Nagar",
-    "locality": "Indira Nagar",
-    "raw_locality": "Indira Nagar",
-    "builder_name": null,
-    "project_name": null,
-    "landmark": "Near Jatra Hotel",
-    "landmarks": ["Jatra Hotel"],
-    "amenities": ["Parking", "Semi Furnished"],
-    "possession_status": "Ready Possession",
-    "furnishing_status": "Semi Furnished",
-    "poster_type": "Broker",
-    "bhk": 2,
-    "price": 12000,
-    "carpet_area_sqft": 850,
-    "broker_phone": "9876543210",
-    "ownership_type": "broker",
-    "missing_fields": [],
-    "warnings": [],
-    "confidence_breakdown": {
-      "price": 100,
-      "phone": 100,
-      "locality": 100,
-      "property_type": 100
-    }
-  }
-]"""
+- Output ONLY a valid JSON array of objects. No explanation, no markdown, no extra text.
+- Each element of the array corresponds to one property in the input.
+- The LLM must NEVER calculate numbers. Keep price, bhk, carpet_area_sqft exactly as provided.
+"""
 
 
 
@@ -149,8 +102,8 @@ def preprocess_whatsapp_text(raw_text: str) -> str:
     Strips timestamps like [11:04 am, 27/06/2026] +91 90000 00001:,
     'Forwarded', 'View Channel', phone chains, emoji spam, and UI artifacts.
     """
-    # Strip WhatsApp timestamps: [time, date] phone:
-    text = re.sub(r"\[\d{1,2}:\d{2}\s*(?:am|pm|AM|PM)?(?:,\s*\d{1,2}/\d{1,2}/\d{2,4})?\]\s*\+?\d[\d\s\-]+:", "", raw_text)
+    # Replace WhatsApp timestamps with a clear message boundary while preserving the sender's phone number
+    text = re.sub(r"\[\d{1,2}:\d{2}\s*(?:am|pm|AM|PM)?(?:,\s*\d{1,2}/\d{1,2}/\d{2,4})?\]\s*(\+?\d[\d\s\-]+):", r"\n\n---MSG_BOUNDARY---\n\n\1:\n", raw_text)
     # Strip Forwarded headers
     text = re.sub(r"\bForwarded\b", "", text, flags=re.IGNORECASE)
     # Strip View Channel / Follow Channel text
@@ -159,41 +112,15 @@ def preprocess_whatsapp_text(raw_text: str) -> str:
     return text
 
 
-def split_into_message_blocks(raw_text: str) -> List[str]:
+from shared.utils.chunking import MessageSplitter
+
+def split_into_message_blocks(raw_text: str) -> Tuple[str, List[str]]:
     """
-    Splits a raw WhatsApp chat dump into individual message blocks.
-
-    WhatsApp messages are naturally separated by blank lines when copy-pasted.
-    This function groups contiguous non-empty lines into blocks and returns
-    each block as a single string.
-
-    Args:
-        raw_text: The full raw copy-paste text from a WhatsApp group.
-
+    Splits a raw WhatsApp chat dump into individual message blocks using the Strategy Pattern.
     Returns:
-        List of message block strings, each representing one logical message.
+        (strategy_name, list_of_message_blocks)
     """
-    # Normalise line endings across platforms (Windows CRLF, Unix LF)
-    normalized = raw_text.replace("\r\n", "\n").replace("\r", "\n")
-    lines = normalized.split("\n")
-
-    blocks: List[str] = []
-    current_block: List[str] = []
-
-    for line in lines:
-        stripped = line.strip()
-        if stripped:
-            current_block.append(stripped)
-        else:
-            if current_block:
-                blocks.append("\n".join(current_block))
-                current_block = []
-
-    # Flush any trailing block that wasn't followed by a blank line
-    if current_block:
-        blocks.append("\n".join(current_block))
-
-    return blocks
+    return MessageSplitter.split(raw_text)
 
 
 def chunk_blocks(blocks: List[str], chunk_size: int = CHUNK_SIZE_BLOCKS) -> List[List[str]]:
@@ -247,6 +174,7 @@ def call_ollama_extract(chunk_text: str, source_group: str) -> List[Dict[str, An
             {"role": "user", "content": user_message}
         ],
         "stream": False,
+        "format": "json",
         "options": {
             "temperature": 0.1,   # Very low temperature — we want deterministic JSON
             "num_predict": 2048
@@ -289,10 +217,16 @@ def call_ollama_extract(chunk_text: str, source_group: str) -> List[Dict[str, An
                 return parsed
             elif isinstance(parsed, dict):
                 # Model occasionally wraps array in {"properties": [...]}
-                for key in ("properties", "listings", "results"):
-                    if key in parsed and isinstance(parsed[key], list):
-                        return parsed[key]
-            logger.warning(f"[Ollama] Attempt {attempt+1}: Unexpected response shape: {type(parsed)}")
+                # Or {"data": [...]}, or uses a dynamic key. Find the first list value.
+                for key, val in parsed.items():
+                    if isinstance(val, list):
+                        return val
+                
+                # If it didn't find a list, maybe it generated a single property object instead of an array.
+                if "price" in parsed or "title" in parsed:
+                    return [parsed]
+                    
+            logger.warning(f"[Ollama] Attempt {attempt+1}: Unexpected response shape: {type(parsed)}, keys: {list(parsed.keys()) if isinstance(parsed, dict) else 'none'}")
             time.sleep(2 ** attempt)
             continue
 
@@ -324,6 +258,7 @@ def is_real_estate_listing(block_text: str) -> bool:
         r"\b(ogeneral ac|compressor \d+ year|inverter 5star model no)\b",
         r"\b(video marketing workshop|property reels|generate more real estate leads using just your mobile phone)\b",
         r"\b(whatsapp business network|exclusive business groups|promote • collaborate)\b",
+        r"(sneh events|फॅशन शो|कंपनी कॉन्फरन्स|कॅटरिंग सर्विस|नवनीत ब्रास बँड|लग्न समारंभ)",
     ]
     for pattern in absolute_spam_patterns:
         if re.search(pattern, text):
@@ -361,8 +296,8 @@ from shared.utils.normalization import compute_ingestion_hash, normalise_extract
     autoretry_for=(Exception,),
     retry_backoff=5,
     retry_jitter=True,
-    soft_time_limit=600,   # 10-minute soft kill for very large dumps
-    time_limit=660         # Hard kill at 11 minutes
+    soft_time_limit=3600,  # 60-minute soft kill for very large dumps
+    time_limit=3660        # Hard kill at 61 minutes
 )
 def process_raw_group_dump(self, source_group: str, raw_text: str, event_id: str = ""):
     """
@@ -421,9 +356,9 @@ def process_raw_group_dump(self, source_group: str, raw_text: str, event_id: str
     # Step 1 — Chunk the input text into manageable message blocks        #
     # ------------------------------------------------------------------ #
     cleaned_text = preprocess_whatsapp_text(raw_text)
-    all_blocks = split_into_message_blocks(cleaned_text)
+    splitter_strategy, all_blocks = split_into_message_blocks(cleaned_text)
     total_blocks = len(all_blocks)
-    logger.info(f"[Ingestion Task] [{task_id}] Split into {total_blocks} message block(s).")
+    logger.info(f"[Ingestion Task] [{task_id}] Split into {total_blocks} message block(s) using '{splitter_strategy}' strategy.")
 
     # Only sub-chunk if total blocks exceed the threshold
     if total_blocks > CHUNK_SIZE_BLOCKS:
@@ -500,21 +435,56 @@ def process_raw_group_dump(self, source_group: str, raw_text: str, event_id: str
             chunk_agri = 0
             chunk_geo = 0
 
-            # ── Phase 4.5: Spam pre-filter before Ollama inference ─────────
+            # ── Phase 4.5: Spam pre-filter & Deterministic Tokenization/Extraction ─────────
             valid_blocks = []
+            partial_objects = []
+            from shared.utils.deterministic_parser import WhatsAppTokenizer, CategoryAExtractor, CategoryBExtractor
+            from shared.utils.validators import PropertyValidator
+
             for block in chunk_blocks_list:
                 if is_real_estate_listing(block):
-                    valid_blocks.append(block)
+                    clean_b = WhatsAppTokenizer.clean_text(block)
+                    if not clean_b:
+                        continue
+                    intent = CategoryAExtractor.detect_intent(clean_b)
+                    if intent["is_requirement"]:
+                        # Directly log as inquiry/requirement and skip property extraction
+                        logger.info(f"[Ingestion Task] [{task_id}] Chunk {chunk_index}: Detected requirement/inquiry post. Skipping property extraction.")
+                        chunk_failed += 1
+                        total_failed += 1
+                        continue
+                    
+                    price_info = CategoryAExtractor.extract_price(clean_b)
+                    area_info = CategoryAExtractor.extract_area(clean_b)
+                    bhk_info = CategoryAExtractor.extract_bhk(clean_b)
+                    phone_val = CategoryAExtractor.extract_phone(clean_b)
+                    entities = CategoryBExtractor.extract_entities(clean_b)
+
+                    partial_obj = {
+                        "raw_text": clean_b,
+                        "price": price_info["price"],
+                        "bhk": bhk_info["bhk"],
+                        "carpet_area_sqft": area_info["carpet_area_sqft"],
+                        "broker_phone": phone_val,
+                        "listing_type": intent["listing_type"],
+                        "property_type": intent["property_type"],
+                        "furnishing_status": entities.get("furnishing_status"),
+                        "possession_status": entities.get("possession_status"),
+                        "poster_type": entities.get("poster_type"),
+                        "amenities": entities.get("amenities", [])
+                    }
+                    valid_blocks.append(clean_b)
+                    partial_objects.append(partial_obj)
                 else:
                     chunk_spam += 1
                     total_spam_filtered += 1
                     logger.info(f"[Ingestion Task] [{task_id}] Chunk {chunk_index}: Filtered spam/non-property block.")
 
             if not valid_blocks:
-                logger.info(f"[Ingestion Task] [{task_id}] Chunk {chunk_index}: All blocks filtered as spam. Skipping inference.")
+                logger.info(f"[Ingestion Task] [{task_id}] Chunk {chunk_index}: All blocks filtered as spam or requirements. Skipping inference.")
                 continue
 
-            chunk_text = "\n\n---\n\n".join(valid_blocks)
+            chunk_text = json.dumps(partial_objects, default=str)
             logger.info(
                 f"[Ingestion Task] [{task_id}] Inference call {chunk_index}/{len(chunks)} "
                 f"({len(valid_blocks)} blocks, ~{len(chunk_text)} chars)"
@@ -547,78 +517,24 @@ def process_raw_group_dump(self, source_group: str, raw_text: str, event_id: str
                         total_failed += 1
                         continue
 
-                    # ── Phase 4.6 & 6.3: PG / Roommate listing detection and routing ────────────
-                    prop_type_lower = str(raw_prop.get("property_type", "")).lower()
-                    list_type_lower = str(raw_prop.get("listing_type", "")).lower()
-                    title_desc = f"{raw_prop.get('title', '')} {raw_prop.get('description', '')}".lower()
-                    
-                    if prop_type_lower in ("pg", "roommate") or list_type_lower in ("pg", "roommate") or any(k in title_desc for k in ("paying guest", "boys pg", "girls pg", "cot basis", "roommate", "room partner", "room partners", "per person")):
-                        logger.info(f"[Ingestion Task] [{task_id}] Chunk {chunk_index} prop {prop_index}: Routing PG/Roommate listing to pg_listings collection.")
-                        pg_doc = normalise_extracted_property(
-                            raw={**raw_prop, "_raw_message_id": raw_log_id},
-                            source_group=source_group,
-                            ingestion_hash=compute_ingestion_hash(
-                                price=raw_prop.get("price", 0),
-                                area=raw_prop.get("area", ""),
-                                bhk=raw_prop.get("bhk", 0),
-                                listing_type=raw_prop.get("listing_type", "pg"),
-                                broker_phone=raw_prop.get("broker_phone")
-                            ),
-                            db=db
-                        )
-                        import uuid as _uuid
-                        pg_doc["property_id"] = f"pg_{_uuid.uuid4().hex[:8]}"
-                        db["pg_listings"].insert_one(pg_doc)
-                        chunk_pg += 1
-                        total_pg += 1
-                        continue
+                    # Deterministically restore raw_text and Category A fields in case LLM dropped or altered them
+                    orig_partial = partial_objects[prop_index - 1] if (prop_index - 1) < len(partial_objects) else {}
+                    raw_text_prop = raw_prop.get("raw_text") or orig_partial.get("raw_text") or ""
+                    raw_prop["raw_text"] = raw_text_prop
+                    if orig_partial.get("price", 0) > 0:
+                        raw_prop["price"] = orig_partial.get("price")
+                    if orig_partial.get("bhk", 0) > 0:
+                        raw_prop["bhk"] = orig_partial.get("bhk")
+                    if orig_partial.get("carpet_area_sqft"):
+                        raw_prop["carpet_area_sqft"] = orig_partial.get("carpet_area_sqft")
+                    if orig_partial.get("broker_phone"):
+                        raw_prop["broker_phone"] = orig_partial.get("broker_phone")
+                    if orig_partial.get("listing_type"):
+                        raw_prop["listing_type"] = orig_partial.get("listing_type")
+                    if orig_partial.get("property_type"):
+                        raw_prop["property_type"] = orig_partial.get("property_type")
 
-                    # ── Phase 4.7 & 6.3: Agricultural / JV listing detection and routing ───────────
-                    if prop_type_lower in ("agricultural", "jv", "joint_venture", "farm", "land") or any(k in title_desc for k in ("agricultural", "sheti", "farm land", "joint venture", "jv proposal", "development rights", "आदिवासी", "एकर", "जमीन", "शेती", "farmhouse plots", "farmhouse", "वैतारना")):
-                        logger.info(f"[Ingestion Task] [{task_id}] Chunk {chunk_index} prop {prop_index}: Routing Agricultural/JV listing to agricultural_jv_listings collection.")
-                        agri_doc = normalise_extracted_property(
-                            raw={**raw_prop, "_raw_message_id": raw_log_id},
-                            source_group=source_group,
-                            ingestion_hash=compute_ingestion_hash(
-                                price=raw_prop.get("price", 0),
-                                area=raw_prop.get("area", ""),
-                                bhk=raw_prop.get("bhk", 0),
-                                listing_type=raw_prop.get("listing_type", "sale"),
-                                broker_phone=raw_prop.get("broker_phone")
-                            ),
-                            db=db
-                        )
-                        import uuid as _uuid
-                        agri_doc["property_id"] = f"agri_{_uuid.uuid4().hex[:8]}"
-                        db["agricultural_jv_listings"].insert_one(agri_doc)
-                        chunk_agri += 1
-                        total_agri += 1
-                        continue
-
-                    # ── Phase 4.8 & 6.2: Enforce geo-fence and route out-of-network ───────────────────────────
-                    if raw_prop.get("city") and str(raw_prop.get("city")).strip().title() not in {"Nashik", "Pune", "Mumbai"}:
-                        out_city = str(raw_prop.get("city")).strip().title()
-                        logger.info(f"[Ingestion Task] [{task_id}] Chunk {chunk_index} prop {prop_index}: Routing out-of-network city '{out_city}' to out_of_network_properties collection.")
-                        out_doc = normalise_extracted_property(
-                            raw={**raw_prop, "_raw_message_id": raw_log_id},
-                            source_group=source_group,
-                            ingestion_hash=compute_ingestion_hash(
-                                price=raw_prop.get("price", 0),
-                                area=raw_prop.get("area", ""),
-                                bhk=raw_prop.get("bhk", 0),
-                                listing_type=raw_prop.get("listing_type", "rent"),
-                                broker_phone=raw_prop.get("broker_phone")
-                            ),
-                            db=db
-                        )
-                        import uuid as _uuid
-                        out_doc["property_id"] = f"out_{_uuid.uuid4().hex[:8]}"
-                        db["out_of_network_properties"].insert_one(out_doc)
-                        chunk_geo += 1
-                        total_out_of_geo += 1
-                        continue
-
-                    # ── Step 3a: Compute structural ingestion hash ─────────────
+                    # Compute ingestion hash early for normalization
                     broker_phone = raw_prop.get("broker_phone")
                     ingestion_hash = compute_ingestion_hash(
                         price=raw_prop.get("price", 0),
@@ -627,6 +543,64 @@ def process_raw_group_dump(self, source_group: str, raw_text: str, event_id: str
                         listing_type=raw_prop.get("listing_type", "rent"),
                         broker_phone=broker_phone
                     )
+
+                    # Build normalized document to run through PropertyValidator
+                    base_doc = normalise_extracted_property(
+                        raw={**raw_prop, "_raw_message_id": raw_log_id, "raw_text": raw_text_prop},
+                        source_group=source_group,
+                        ingestion_hash=ingestion_hash,
+                        db=db
+                    )
+                    
+                    base_doc["splitter_strategy"] = splitter_strategy
+                    base_doc["chunk_index"] = chunk_index
+                    base_doc["raw_chunk"] = chunk_text
+
+                    is_valid, val_errors = PropertyValidator.validate_property(base_doc, raw_text_prop, source_group)
+                    if not is_valid:
+                        logger.warning(f"[Ingestion Task] [{task_id}] Chunk {chunk_index} prop {prop_index}: Validation failed: {val_errors}. Routing to properties_review_queue.")
+                        import uuid as _uuid
+                        base_doc["property_id"] = f"rev_{_uuid.uuid4().hex[:8]}"
+                        base_doc["validation_errors"] = val_errors
+                        db["properties_review_queue"].insert_one(base_doc)
+                        chunk_failed += 1
+                        total_failed += 1
+                        continue
+
+                    # ── Phase 4.6 & 6.3: PG / Roommate listing detection and routing ────────────
+                    prop_type_lower = str(base_doc.get("property_type", "")).lower()
+                    list_type_lower = str(base_doc.get("listing_type", "")).lower()
+                    title_desc = f"{base_doc.get('title', '')} {base_doc.get('description', '')}".lower()
+                    
+                    if prop_type_lower in ("pg", "roommate") or list_type_lower in ("pg", "roommate") or any(k in title_desc for k in ("paying guest", "boys pg", "girls pg", "cot basis", "roommate", "room partner", "room partners", "per person")):
+                        logger.info(f"[Ingestion Task] [{task_id}] Chunk {chunk_index} prop {prop_index}: Routing PG/Roommate listing to pg_listings collection.")
+                        import uuid as _uuid
+                        base_doc["property_id"] = f"pg_{_uuid.uuid4().hex[:8]}"
+                        db["pg_listings"].insert_one(base_doc)
+                        chunk_pg += 1
+                        total_pg += 1
+                        continue
+
+                    # ── Phase 4.7 & 6.3: Agricultural / JV listing detection and routing ───────────
+                    if prop_type_lower in ("agricultural", "jv", "joint_venture", "farm", "land") or any(k in title_desc for k in ("agricultural", "sheti", "farm land", "joint venture", "jv proposal", "development rights", "आदिवासी", "एकर", "जमीन", "शेती", "farmhouse plots", "farmhouse", "वैतारना")):
+                        logger.info(f"[Ingestion Task] [{task_id}] Chunk {chunk_index} prop {prop_index}: Routing Agricultural/JV listing to agricultural_jv_listings collection.")
+                        import uuid as _uuid
+                        base_doc["property_id"] = f"agri_{_uuid.uuid4().hex[:8]}"
+                        db["agricultural_jv_listings"].insert_one(base_doc)
+                        chunk_agri += 1
+                        total_agri += 1
+                        continue
+
+                    # ── Phase 4.8 & 6.2: Enforce geo-fence and route out-of-network ───────────────────────────
+                    if base_doc.get("city") and str(base_doc.get("city")).strip().title() not in {"Nashik", "Pune", "Mumbai"}:
+                        out_city = str(base_doc.get("city")).strip().title()
+                        logger.info(f"[Ingestion Task] [{task_id}] Chunk {chunk_index} prop {prop_index}: Routing out-of-network city '{out_city}' to out_of_network_properties collection.")
+                        import uuid as _uuid
+                        base_doc["property_id"] = f"out_{_uuid.uuid4().hex[:8]}"
+                        db["out_of_network_properties"].insert_one(base_doc)
+                        chunk_geo += 1
+                        total_out_of_geo += 1
+                        continue
 
                     # ── Step 3b: Deduplication lookup (sync PyMongo) ───────────
                     existing = properties_col.find_one({
@@ -692,12 +666,7 @@ def process_raw_group_dump(self, source_group: str, raw_text: str, event_id: str
                             )
 
                     # ── Step 5: Build and insert the property document ─────────
-                    property_doc = normalise_extracted_property(
-                        raw={**raw_prop, "_raw_message_id": raw_log_id},
-                        source_group=source_group,
-                        ingestion_hash=ingestion_hash,
-                        db=db
-                    )
+                    property_doc = base_doc
                     import uuid as _uuid
                     property_doc["property_id"] = f"prop_{_uuid.uuid4().hex[:8]}"
 

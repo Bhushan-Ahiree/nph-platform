@@ -217,11 +217,12 @@ def test_process_raw_group_dump_integration(mock_call_ollama, mock_get_db, mock_
             "price": 2800000,
             "carpet_area_sqft": 650,
             "broker_phone": "9000000001",
-            "ownership_type": "broker"
+            "ownership_type": "broker",
+            "raw_text": "Sample raw text"
         },
         # 2. PG / Roommate Property (goes to pg_listings collection)
         {
-            "title": "ROOM PARTNERS WANTED – 2 BOYS",
+            "title": "ROOM PARTNERS WANTED  2 BOYS",
             "description": "Mahajan Nagar, Uttam Nagar",
             "property_type": "roommate",
             "listing_type": "pg",
@@ -230,7 +231,8 @@ def test_process_raw_group_dump_integration(mock_call_ollama, mock_get_db, mock_
             "bhk": 1,
             "price": 1900,
             "broker_phone": "9000000006",
-            "ownership_type": "owner"
+            "ownership_type": "owner",
+            "raw_text": "PG for boys on rent"
         },
         # 3. Agricultural Land (goes to agricultural_jv_listings collection)
         {
@@ -243,7 +245,8 @@ def test_process_raw_group_dump_integration(mock_call_ollama, mock_get_db, mock_
             "bhk": 0,
             "price": 1000000, # per acre
             "broker_phone": "9000000005",
-            "ownership_type": "broker"
+            "ownership_type": "broker",
+            "raw_text": "agricultural land for sale"
         },
         # 4. Out of network property (goes to out_of_network_properties collection)
         {
@@ -256,7 +259,8 @@ def test_process_raw_group_dump_integration(mock_call_ollama, mock_get_db, mock_
             "bhk": 2,
             "price": 12000000,
             "broker_phone": "9999999999",
-            "ownership_type": "broker"
+            "ownership_type": "broker",
+            "raw_text": "2 bhk flat for sale"
         }
     ]] + [[]] * 20
 
@@ -276,6 +280,6 @@ def test_process_raw_group_dump_integration(mock_call_ollama, mock_get_db, mock_
     # Verify documents in MongoDB collections
     db = mock_db.client.nph_core
     assert db.properties.count_documents({"title": "1 BHK Apartment near Jatra Hotel"})._value == 1
-    assert db.pg_listings.count_documents({"title": "ROOM PARTNERS WANTED – 2 BOYS"})._value == 1
+    assert db.pg_listings.count_documents({"title": "ROOM PARTNERS WANTED  2 BOYS"})._value == 1
     assert db.agricultural_jv_listings.count_documents({"title": "115 acres tribal land Shahapur"})._value == 1
     assert db.out_of_network_properties.count_documents({"title": "2 BHK Flat in Thane West"})._value == 1

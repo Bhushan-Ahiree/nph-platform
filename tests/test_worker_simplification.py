@@ -79,7 +79,9 @@ def test_process_raw_group_dump_filtering_and_routing(mock_ollama, mock_get_db):
             "listing_type": "rent",
             "city": "Nashik",
             "price": 12000,
-            "broker_phone": "9876543210"
+            "bhk": 2,
+            "broker_phone": "9876543210",
+            "raw_text": "2 BHK flat for rent"
         },
         {
             "title": "Boys PG in College Road",
@@ -87,7 +89,9 @@ def test_process_raw_group_dump_filtering_and_routing(mock_ollama, mock_get_db):
             "listing_type": "rent",
             "city": "Nashik",
             "price": 5000,
-            "broker_phone": "9876543211"
+            "bhk": 1,
+            "broker_phone": "9876543211",
+            "raw_text": "PG for boys on rent"
         },
         {
             "title": "5 Acre Agricultural Land for sale",
@@ -96,15 +100,19 @@ def test_process_raw_group_dump_filtering_and_routing(mock_ollama, mock_get_db):
             "description": "Fertile agricultural sheti land",
             "city": "Nashik",
             "price": 5000000,
-            "broker_phone": "9876543212"
+            "bhk": 1,
+            "broker_phone": "9876543212",
+            "raw_text": "agricultural land for sale"
         },
         {
             "title": "3 BHK Flat in Delhi",
             "property_type": "apartment",
             "listing_type": "rent",
             "city": "Delhi",
+            "bhk": 3,
             "price": 30000,
-            "broker_phone": "9876543213"
+            "broker_phone": "9876543213",
+            "raw_text": "3 bhk flat for rent"
         }
     ]
 

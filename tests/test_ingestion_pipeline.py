@@ -30,14 +30,14 @@ class TestSplitIntoMessageBlocks:
     def test_single_block_no_blank_lines(self):
         fn = self._import()
         raw = "2BHK available in Indira Nagar\nRent 12k pm\nCall 9876543210"
-        blocks = fn(raw)
+        strategy, blocks = fn(raw)
         assert len(blocks) == 1
         assert "2BHK" in blocks[0]
 
     def test_two_blocks_separated_by_blank_line(self):
         fn = self._import()
         raw = "2BHK Indira Nagar 12k\n\n3BHK College Road 22k call 9988776655"
-        blocks = fn(raw)
+        strategy, blocks = fn(raw)
         assert len(blocks) == 2
         assert "2BHK" in blocks[0]
         assert "3BHK" in blocks[1]
@@ -45,39 +45,41 @@ class TestSplitIntoMessageBlocks:
     def test_multiple_blank_lines_treated_as_single_separator(self):
         fn = self._import()
         raw = "Block A\n\n\n\nBlock B\n\n\nBlock C"
-        blocks = fn(raw)
+        strategy, blocks = fn(raw)
         assert len(blocks) == 3
 
     def test_windows_crlf_normalisation(self):
         fn = self._import()
         raw = "Block A\r\n\r\nBlock B"
-        blocks = fn(raw)
+        strategy, blocks = fn(raw)
         assert len(blocks) == 2
 
     def test_empty_string_returns_empty_list(self):
         fn = self._import()
-        assert fn("") == []
+        strategy, blocks = fn("")
+        assert blocks == []
 
     def test_whitespace_only_string_returns_empty_list(self):
         fn = self._import()
-        assert fn("   \n   \n   ") == []
+        strategy, blocks = fn("   \n   \n   ")
+        assert blocks == []
 
     def test_trailing_newlines_do_not_create_extra_block(self):
         fn = self._import()
         raw = "Single block\n\n\n"
-        blocks = fn(raw)
+        strategy, blocks = fn(raw)
         assert len(blocks) == 1
 
     def test_five_blocks_below_chunk_threshold(self):
         fn = self._import()
-        raw = "\n\n".join([f"Message {i}" for i in range(5)])
-        blocks = fn(raw)
+        raw = "\n\n\n".join([f"Message {i}" for i in range(5)])
+        strategy, blocks = fn(raw)
         assert len(blocks) == 5
 
     def test_six_blocks_exceeds_chunk_threshold(self):
         fn = self._import()
-        raw = "\n\n".join([f"Message {i}" for i in range(6)])
-        blocks = fn(raw)
+        raw = "\n\n\n".join([f"Message {i}" for i in range(6)])
+        strategy, blocks = fn(raw)
         assert len(blocks) == 6
 
 
