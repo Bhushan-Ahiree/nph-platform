@@ -1,7 +1,7 @@
 import os
 import pytest
 from unittest.mock import patch
-from shared.utils.deterministic_parser import WhatsAppTokenizer, CategoryAExtractor, CategoryBExtractor
+from shared.utils.deterministic_parser import WhatsAppTokenizer, CategoryAExtractor
 from shared.utils.validators import PropertyValidator
 from apps.worker.tasks.ingestion_tasks import preprocess_whatsapp_text, split_into_message_blocks, is_real_estate_listing, process_raw_group_dump
 
@@ -138,3 +138,34 @@ def test_sample_dump_ingests_without_llm(mock_call_ollama, mock_get_db, mock_db,
 
     prices = sorted(d["price"] for d in mock_db.client.nph_core.properties._docs)
     assert prices == [9000, 13000, 3500000, 4000000, 12100000, 125000000]
+
+
+@pytest.mark.parametrize("text", [
+    "+91 90000 00013: रिक्वायरमेंट: प्लॉट पाहिजे कॉल 9000000013",
+    "Plot available near Gangapur Road call 98765 43210",
+    "contact 987 654 3210 for details",
+])
+def test_phone_number_fragments_are_never_read_as_price(text):
+    assert CategoryAExtractor.extract_price(WhatsAppTokenizer.clean_text(text))["price"] == 0
+
+
+def test_price_still_found_when_phone_present():
+    text = WhatsAppTokenizer.clean_text("2 bhk flat 15000 per month call 98765 43210")
+    assert CategoryAExtractor.extract_price(text)["price"] == 15000
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Premium bungalow at Pathardi Phata Price 12.50 Cr", "sale"),
+    ("शॉप ३५ लाख", "sale"),
+    ("office rent 1.5 lakh per month", "rent"),
+    ("2 bhk flat 15000 per month", "rent"),
+])
+def test_listing_type_inferred_from_price_units(text, expected):
+    assert CategoryAExtractor.detect_intent(WhatsAppTokenizer.clean_text(text))["listing_type"] == expected
+
+
+def test_devanagari_digits_are_parsed():
+    text = WhatsAppTokenizer.clean_text("३ BHK फ्लॅट विकणे आहे ३५ लाख संपर्क ९०००००००२०")
+    assert CategoryAExtractor.extract_price(text)["price"] == 3500000
+    assert CategoryAExtractor.extract_bhk(text)["bhk"] == 3
+    assert CategoryAExtractor.extract_phone(text) == "9000000020"

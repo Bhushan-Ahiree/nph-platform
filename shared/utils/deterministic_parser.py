@@ -1,5 +1,18 @@
 import re
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
+
+# Devanagari digits (०-९) appear in Marathi/Hindi posts, e.g. "३५ लाख"
+_DEVANAGARI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
+
+# Indian mobile numbers, including spaced forms like "+91 98765 43210" or "987 654 3210"
+_PHONE_PATTERN = re.compile(
+    r"(?:\+?91[\s\-]*)?(?:[6-9]\d{9}|[6-9]\d{4}[\s\-]\d{5}|[6-9]\d{2}[\s\-]\d{3}[\s\-]\d{4})"
+)
+
+
+def _normalize(text: str) -> str:
+    """Lowercases and converts Devanagari digits so numeric regexes work on Marathi/Hindi text."""
+    return str(text).translate(_DEVANAGARI_DIGITS).lower()
 
 class WhatsAppTokenizer:
     """
@@ -45,6 +58,7 @@ class CategoryAExtractor:
     def extract_phone(text: str) -> Optional[str]:
         if not text:
             return None
+        text = str(text).translate(_DEVANAGARI_DIGITS)
         # Look for typical 10-digit phone number patterns or +91 patterns
         digits = re.findall(r"(?:\+?91[\s\-]*)?[789]\d{9}|(?:\+?91[\s\-]*)?[789]\d{2}\s*\d{3}\s*\d{4}|(?:\+?91[\s\-]*)?[789]\d{4}\s*\d{5}", str(text))
         if not digits:
@@ -71,7 +85,7 @@ class CategoryAExtractor:
         """
         if not text:
             return {"price": 0, "price_raw": None}
-        s = str(text).lower()
+        s = _normalize(text)
 
         # Check explicit rent/price/offer keywords first to avoid matching deposit (e.g. डिपॉझिट = 30हजार vs भाडे = 13000)
         match_kw_unit = re.search(r"(?:भाडे|rent|price|offer)\s*[-=:]?\s*([0-9]+(?:\.[0-9]+)?)\s*(cr|crore|crores|कोटी|lakh|lakhs|lac|lacs|लाख|k|thousand|हजार)", s)
@@ -89,6 +103,8 @@ class CategoryAExtractor:
         # Match explicit price mentions with units: e.g. 40 lakh, 12.50 cr, 25 lakh, 40 लाख, 1.21 cr
         # Strip out deposit mentions before scanning for general units
         s_no_dep = re.sub(r"(?:deposit|डिपॉझिट|adv|advance)\s*[-=:]?\s*[0-9]+(?:\.[0-9]+)?\s*(?:k|thousand|हजार|lakh|lakhs|lac|lacs|लाख)?", "", s)
+        # Strip phone numbers so fragments like "90000" from "+91 90000 00013" are never read as a price
+        s_no_dep = _PHONE_PATTERN.sub(" ", s_no_dep)
 
         patterns = [
             (r"([0-9]+(?:\.[0-9]+)?)\s*(cr|crore|crores|कोटी)", 10000000),
@@ -121,7 +137,7 @@ class CategoryAExtractor:
         """
         if not text:
             return {"carpet_area_sqft": None, "area_raw": None}
-        s = str(text).lower()
+        s = _normalize(text)
 
         # Translate Marathi number words for common land sizes
         marathi_nums = {"एक": 1, "दोन": 2, "तीन": 3, "चार": 4, "पाच": 5, "दहा": 10, "वीस": 20, "पन्नास": 50, "शंभर": 100}
@@ -165,7 +181,7 @@ class CategoryAExtractor:
     def extract_bhk(text: str) -> Dict[str, Any]:
         if not text:
             return {"bhk": 0, "bhk_raw": None}
-        s = str(text).lower()
+        s = _normalize(text)
         match = re.search(r"(\d)\s*(bhk|rk|bedroom)", s)
         if match:
             return {"bhk": int(match.group(1)), "bhk_raw": match.group(0).strip()}
@@ -179,7 +195,7 @@ class CategoryAExtractor:
         """
         if not text:
             return {"is_requirement": False, "listing_type": "rent", "property_type": "apartment"}
-        s = str(text).lower()
+        s = _normalize(text)
 
         # Requirement / Inquiry keywords
         req_keywords = ["पाहिजे", "रिक्वायरमेंट", "wanted", "requirement", "required", "need", "looking for", "buyer", "पाहिजेत"]
@@ -199,6 +215,10 @@ class CategoryAExtractor:
             listing_type = "jv"
         elif any(kw in s for kw in ["भाड्याने", "भाडे", "rent", "for rent"]):
             listing_type = "rent"
+        elif re.search(r"\d\s*(?:cr|crore|crores|कोटी|lakh|lakhs|lac|lacs|लाख)\b", s):
+            # No transaction keyword, but priced in lakh/crore: rents are never quoted in crore
+            # and lakh-level rents are virtually always labelled "rent".
+            listing_type = "sale"
 
         # Asset / Property type
         property_type = "apartment"
