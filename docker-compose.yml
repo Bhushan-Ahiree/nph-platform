@@ -1,10 +1,13 @@
 # docker-compose.yml
+# Default stack: api + worker + redis + mongo.
+# Optional profiles:  --profile llm      -> local Ollama for LLM enrichment (set LLM_ENABLED=true)
+#                     --profile scraper  -> HTML scraper demo
 services:
   api:
     build:
       context: .
       dockerfile: infrastructure/docker/api.Dockerfile
-    container_name: nph_api
+    image: nph-platform:local
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -13,9 +16,12 @@ services:
       - .env
     working_dir: /app
     volumes:
-      - .:/app 
+      - .:/app
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+      mongo:
+        condition: service_healthy
     networks:
       - nph_network
     healthcheck:
@@ -23,12 +29,33 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 180s
-    command: sh -c "pip install -r apps/api/requirements.txt && uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir apps/api --reload-dir shared --reload-dir services"
+      start_period: 20s
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir apps/api --reload-dir shared --reload-dir services
+
+  nph_worker:
+    image: nph-platform:local
+    pull_policy: never
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - .:/app
+    working_dir: /app/apps/worker
+    # Beat schedule state lives in /tmp so it never lands in the repo
+    command: celery -A main.celery_app worker -B --schedule /tmp/celerybeat-schedule --loglevel=info
+    depends_on:
+      redis:
+        condition: service_started
+      mongo:
+        condition: service_healthy
+    networks:
+      - nph_network
 
   redis:
     image: redis:7-alpine
-    container_name: nph_redis
     ports:
       - "6380:6379"
     volumes:
@@ -36,45 +63,44 @@ services:
     networks:
       - nph_network
 
-  nph_worker:
-    build:
-      context: .
-      dockerfile: infrastructure/docker/api.Dockerfile
-    container_name: nph_worker
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - PYTHONPATH=/app
-    env_file:
-      - .env
+  # Single-node replica set: site-visit booking uses multi-document transactions
+  mongo:
+    image: mongo:7
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27018:27017"
     volumes:
-      - ./apps/worker:/app/apps/worker
-      - ./shared:/app/shared
-      - ./services:/app/services
-    working_dir: /app/apps/worker
-    # Command: Install runtime worker requirements and fire up the Celery execution daemon
-    command: sh -c "pip install -r requirements.txt && celery -A main.celery_app worker -B --loglevel=info"
-    depends_on:
-      - redis
+      - mongo_data:/data/db
+    networks:
+      - nph_network
+    healthcheck:
+      # Initiates the replica set on first boot, then reports healthy once it is ready
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status().ok } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}).ok }"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
+
+  ollama:
+    image: ollama/ollama:0.5.7
+    profiles: ["llm"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
     networks:
       - nph_network
 
   nph_scraper:
-    build:
-      context: .
-      dockerfile: infrastructure/docker/api.Dockerfile
-    container_name: nph_scraper
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: on-failure
+    image: nph-platform:local
+    pull_policy: never
+    profiles: ["scraper"]
     env_file:
       - .env
     volumes:
-      - ./apps/scraper:/app/apps/scraper
-      - ./shared:/app/shared
+      - .:/app
     working_dir: /app/apps/scraper
-    command: sh -c "pip install -r requirements.txt && python run.py"
+    command: python run.py
     depends_on:
       api:
         condition: service_healthy
@@ -83,6 +109,8 @@ services:
 
 volumes:
   redis_data:
+  mongo_data:
+  ollama_data:
 
 networks:
   nph_network:

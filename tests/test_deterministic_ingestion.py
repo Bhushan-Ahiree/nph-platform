@@ -1,5 +1,6 @@
 import os
 import pytest
+from unittest.mock import patch
 from shared.utils.deterministic_parser import WhatsAppTokenizer, CategoryAExtractor, CategoryBExtractor
 from shared.utils.validators import PropertyValidator
 from apps.worker.tasks.ingestion_tasks import preprocess_whatsapp_text, split_into_message_blocks, is_real_estate_listing, process_raw_group_dump
@@ -114,3 +115,26 @@ def test_property_validator_guardrails():
     assert is_valid
     assert doc4["area"] == "Unknown"
     assert any("Locality perfectly matches group name" in w for w in doc4.get("validation_errors", []) + doc4.get("warnings", []))
+
+
+@patch("apps.worker.tasks.ingestion_tasks.LLM_ENABLED", False)
+@patch("apps.worker.tasks.ingestion_tasks.get_db")
+@patch("apps.worker.tasks.ingestion_tasks.call_ollama_extract")
+def test_sample_dump_ingests_without_llm(mock_call_ollama, mock_get_db, mock_db, raw_dump_text):
+    """With LLM_ENABLED=false the deterministic parser output is ingested directly."""
+    mock_get_db.return_value = mock_db.client.nph_core
+
+    summary = process_raw_group_dump(
+        source_group="Sample Nashik Property Group",
+        raw_text=raw_dump_text,
+        event_id="evt_sample_no_llm"
+    )
+
+    mock_call_ollama.assert_not_called()
+    assert summary["status"] == "completed"
+    assert summary["inserted"] == 6       # 8 messages minus 1 requirement post and 1 spam ad
+    assert summary["failed"] == 1         # requirement post
+    assert summary["spam_filtered"] == 1  # event promotion
+
+    prices = sorted(d["price"] for d in mock_db.client.nph_core.properties._docs)
+    assert prices == [9000, 13000, 3500000, 4000000, 12100000, 125000000]

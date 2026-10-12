@@ -56,6 +56,9 @@ CHUNK_SIZE_BLOCKS = 5
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 
+# When disabled, the deterministic parser output is ingested directly (no Ollama required).
+LLM_ENABLED = os.getenv("LLM_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+
 # System prompt passed on every Ollama inference call.
 OLLAMA_SYSTEM_PROMPT = """You are an elite real estate semantic enrichment engine for Nashik Property Hub.
 
@@ -491,7 +494,10 @@ def process_raw_group_dump(self, source_group: str, raw_text: str, event_id: str
             )
 
             # ── Step 2: Call Ollama for property extraction ────────────────
-            extracted_properties = call_ollama_extract(chunk_text, source_group)
+            if LLM_ENABLED:
+                extracted_properties = call_ollama_extract(chunk_text, source_group)
+            else:
+                extracted_properties = [dict(p) for p in partial_objects]
             if not extracted_properties:
                 logger.info(
                     f"[Ingestion Task] [{task_id}] Chunk {chunk_index}: "

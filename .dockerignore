@@ -1,0 +1,21 @@
+# Never bake secrets or private data into the image
+.env
+.env.*
+!.env.example
+dump*.txt
+audit_*
+data/raw/
+
+# Local-only folders
+.git
+AI_CONTEXT/
+scratch/
+scratch_test.py
+docs/business/
+
+# Python artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
